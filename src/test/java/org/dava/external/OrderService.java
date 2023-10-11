@@ -6,7 +6,7 @@ public class OrderService {
 
 
 
-    public List<OrderTable> getOrder() {
+    public List<Order> getOrder() {
         OrderRepository repository = new OrderRepository();
 
 

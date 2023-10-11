@@ -7,7 +7,7 @@ import java.util.List;
 
 public class SqlService {
 
-
+        // select distinct
 
 
 

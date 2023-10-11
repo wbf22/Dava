@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Random;
 
 public class FileUtil {
 
@@ -33,14 +34,6 @@ public class FileUtil {
     }
 
 
-    public static void writeFile(String desitnationPath, String fileContents) throws IOException {
-        FileOutputStream fileOutputStream;
-        fileOutputStream = new FileOutputStream(desitnationPath);
-
-        fileOutputStream.write(fileContents.getBytes(StandardCharsets.UTF_8));
-        fileOutputStream.close();
-    }
-
     public static String readFile(String filePath) throws IOException {
         return new String(readBytes(filePath), StandardCharsets.UTF_8);
     }
@@ -56,6 +49,14 @@ public class FileUtil {
         return fileContent;
     }
 
+    public static void writeFile(String desitnationPath, String fileContents) throws IOException {
+        FileOutputStream fileOutputStream;
+        fileOutputStream = new FileOutputStream(desitnationPath);
+
+        fileOutputStream.write(fileContents.getBytes(StandardCharsets.UTF_8));
+        fileOutputStream.close();
+    }
+
     public static void writeFile(String filePath, long position, String data) throws IOException {
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             // Move to the desired position in the file
@@ -66,10 +67,27 @@ public class FileUtil {
         }
     }
 
+    public static void writeBytes(String filePath, long position, byte[] data) throws IOException {
+        try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
+            // Move to the desired position in the file
+            file.seek(position);
+
+            // Write data at the current position
+            file.write(data);
+        }
+    }
+
     public static void writeFileAppend(String filePath, String data) throws IOException {
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             file.seek(file.length());
             file.write(data.getBytes());
+        }
+    }
+
+    public static void writeBytesAppend(String filePath, byte[] data) throws IOException {
+        try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
+            file.seek(file.length());
+            file.write(data);
         }
     }
 
@@ -103,27 +121,67 @@ public class FileUtil {
         return data;
     }
 
+    public static void createDirectoriesIfNotExist(String directoryPath) throws IOException {
+        Path path = Paths.get(directoryPath);
+        Files.createDirectories(path);
+    }
+
+    public static boolean createFile(String filePath) throws IOException {
+        return new File(filePath).createNewFile();
+    }
+
+    public static boolean renameFile(String oldFilePath, String newFilePath) {
+        File oldFile = new File(oldFilePath);
+        File newFile = new File(newFilePath);
+
+        if (oldFile.exists()) {
+            return oldFile.renameTo(newFile);
+        }
+        return false;
+    }
+
+    public static File[] listFiles(String path) {
+        return new File(path).listFiles();
+    }
+
+    public static boolean exists(String filePath) {
+        File file = new File(filePath);
+        return file.exists();
+    }
+
     public static long fileSize(String filePath) {
         File file = new File(filePath);
         return file.length();
     }
 
-    public static byte[] popLastBytes(String filePath, int bytesToPop) throws IOException {
+    public static byte[] popRandomBytes(String filePath, int bytesToPop, Random random) throws IOException {
         File file = new File(filePath);
 
         try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
-            // Set the length of the file to the new size
-            long startByte = raf.length() - bytesToPop;
-            raf.seek(startByte); // Set the file pointer to the desired position
-
+            // get a random set of bytes
+            long startByte = (
+                random.nextLong( 0, raf.length()/bytesToPop )
+            ) * bytesToPop;
+            raf.seek(startByte);
             byte[] buffer = new byte[bytesToPop];
-            int bytesRead = raf.read(buffer); // Read the specified number of bytes
+            int bytesRead = raf.read(buffer);
+            byte[] randomData = (bytesRead != -1)? buffer : null;
 
-            byte[] data = (bytesRead != -1)? buffer : null;
+            // get lastRow
+            long endStartByte = raf.length() - bytesToPop;
+            raf.seek(endStartByte);
+            byte[] endBuffer = new byte[bytesToPop];
+            int endBytesRead = raf.read(buffer);
+            byte[] endData = (endBytesRead != -1)? endBuffer : null;
 
-            raf.setLength(startByte); // truncate the bytes off the file
+            // switch the two
+            raf.seek(startByte);
+            raf.write(endData);
 
-            return data;
+            // truncate the end bytes off the file
+            raf.setLength(startByte);
+
+            return randomData;
         }
     }
 

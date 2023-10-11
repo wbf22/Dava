@@ -8,8 +8,8 @@ import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.Arrays;
-import java.util.List;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
 
 import static org.dava.core.database.objects.exception.ExceptionType.BASE_IO_ERROR;
 
@@ -21,21 +21,62 @@ public class BaseOperationService {
 
 
 
-    public <T> boolean insert(Row row, Table<?> table, boolean index) {
-        // TODO check constraints before this method
+    public static boolean insert(Row row, Database database, Table<?> table, boolean index) {
+        // TODO collect data to perform rollback if necessary
+
+        // serialize row
+        String partition = table.getRandomPartition();
+        byte[] bytes = Row.serialize(table, row.getColumnsToValues()).getBytes(StandardCharsets.UTF_8);
+
+        // get random empty row or use last row in the table
+        Long destinationRow = table.getEmptyRow(partition);
+        destinationRow = (destinationRow == null || bytes.length > table.getRowLength(destinationRow, partition))?
+            table.getSize(partition) : destinationRow;
+
+        IndexRoute route = IndexRoute.of(partition, destinationRow, table);
 
         // add to table
-        String serialized = row.serialize(table);
-        table.
+        String path = table.getTablePath(route.getPartition()) + ".csv";
+        try {
+            FileUtil.writeBytes(
+                path,
+                route.getOffsetInTable(),
+                bytes
+            );
+        } catch (IOException e) {
+            throw new DavaException(
+                BASE_IO_ERROR,
+                "Error writing row to: " + path,
+                e
+            );
+        }
 
-        // add to index csv
+        // update table row lengths if needed
+        table.addRowLengthIfNeeded(bytes.length, destinationRow, partition);
 
-        // increment index count
+        // update table row count in empties
+        Long newSize = table.getSize(route.getPartition()) + 1;
+        table.setSize(route.getPartition(), newSize);
+
+        if (index) {
+            // add to index csv
+            for (Map.Entry<String, String> columnValue : row.getColumnsToValues().entrySet()) {
+                String indexPath = Index.buildIndexRootPath(
+                    database.getRootDirectory(),
+                    table.getTableName(),
+                    route.getPartition(),
+                    columnValue.getKey()
+                );
+
+                addToIndex(indexPath, columnValue.getValue(), destinationRow);
+            }
+        }
+
 
         return true;
     }
 
-    public <T> boolean update(Row row, IndexEntry primaryKeyRoute, Table<T> table) {
+    public <T> boolean update(Row row, IndexRoute primaryKeyRoute, Table<T> table) {
 
 //        BigInteger rowOffset = calculateStartOfRow(primaryKeyRoute.getRow(), table);
 //        try {
@@ -56,32 +97,6 @@ public class BaseOperationService {
     /*
         Indices
      */
-    public static Index getIndex(Database database, String tableName, String partition, String columnName, String value) {
-        String indexRootPath = Index.buildIndexRootPath(database.getRootDirectory(), tableName, partition, columnName, value);
-        File indexRootFile = new File(
-            indexRootPath
-        );
-
-        String headerPath = null;
-        File[] files = indexRootFile.listFiles();
-        if (files != null) {
-            File headerFile = Arrays.stream(files).sequential()
-                .filter(file -> file.getName().contains(".header"))
-                .findAny()
-                .orElse(null);
-            headerPath = (headerFile != null)? indexRootPath + "/" + headerFile.getName() : null;
-        }
-
-        if (headerPath != null) {
-            return Index.parseFromHeader(headerPath);
-        }
-
-        throw new DavaException(
-            BASE_IO_ERROR,
-            "Missing header file in index directory or error in read: " + indexRootPath,
-            null
-        );
-    }
 
     public static List<Row> getAllRowsFromIndex(Database database, String tableName, String columnName, String value) {
         Table<?> table = database.getTableByName(tableName);
@@ -96,8 +111,9 @@ public class BaseOperationService {
                     null,
                     null
                 );
+                long[] countRemoved = Arrays.copyOfRange(lines, 1, lines.length);
 
-                return Arrays.stream(lines).sequential()
+                return Arrays.stream(countRemoved).sequential()
                     .mapToObj(line -> getLineFromPartition(partition, table, line))
                     .map(line -> new Row(line, table));
             })
@@ -117,13 +133,12 @@ public class BaseOperationService {
         return table.getPartitions().stream()
             .flatMap(partition -> {
                 String path = Index.buildIndexPath(database.getRootDirectory(), tableName, partition, columnName, value);
-                Index index = BaseOperationService.getIndex(database, tableName, partition, columnName, value);
 
                 long[] lines = getLongs(
                         path,
                         false,
-                        startRow * index.getRowLengths(),
-                        (int) ((endRow - startRow) * index.getRowLengths())
+                        8 + startRow * 8,
+                        (int) ((endRow - startRow) * 8)
                 );
 
 
@@ -152,7 +167,7 @@ public class BaseOperationService {
 
     public static String getLineFromPartition(String partition, Table<?> table, long indexRow) {
 
-        IndexEntry entry = IndexEntry.of(partition, indexRow, table);
+        IndexRoute entry = IndexRoute.of(partition, indexRow, table);
         try {
             return FileUtil.readFile(
                 table.getTablePath(entry.getPartition()),
@@ -169,33 +184,87 @@ public class BaseOperationService {
     }
 
     public static Long getCountForIndexPath(String path) {
-        File file = new File(path);
+        try {
+            return TypeToByteUtil.byteArrayToLong(
+                FileUtil.readBytes(path, 0, 8)
+            );
+        } catch (IOException e) {
+            throw new DavaException(
+                BASE_IO_ERROR,
+                "Error getting index count in: " + path,
+                e
+            );
+        }
 
-        File[] dirs = file.listFiles();
-        if (dirs == null)
-            return null;
-        
-        return Arrays.stream(dirs)
-            .map(File::getName)
-            .filter(name -> name.contains(".header"))
-            .findAny()
-            .map(name ->
-                Long.parseLong(name.split(".header")[0])
-            )
-            .orElse(0L);
     }
+
+    public static void writeCountForIndexPath(String path, long count) {
+        try {
+            FileUtil.writeBytes(
+                path,
+                0,
+                TypeToByteUtil.longToByteArray(
+                    count
+                )
+            );
+        } catch (IOException e) {
+            throw new DavaException(
+                BASE_IO_ERROR,
+                "Error writing index count in: " + path,
+                e
+            );
+        }
+
+    }
+
+
+    public static void addToIndex(String folderPath, String value, long rowNumber) {
+        try {
+            // make index file if it doesn't exist
+            if (!FileUtil.exists(folderPath)) {
+                FileUtil.createDirectoriesIfNotExist(folderPath);
+            }
+
+            // increment index count
+            String path = folderPath + "/" + value + ".index";
+            Long count = 0L;
+            if (FileUtil.exists(path)) {
+                count = getCountForIndexPath(path);
+            }
+            count++;
+            writeCountForIndexPath(path, count);
+
+            // write new row in index
+            FileUtil.writeBytesAppend(
+                folderPath + "/" + value + ".index",
+                TypeToByteUtil.longToByteArray(rowNumber)
+            );
+
+
+
+        } catch (IOException e) {
+            throw new DavaException(
+                BASE_IO_ERROR,
+                "Error writing row index to: " + folderPath,
+                e
+            );
+        }
+
+
+
+    }
+
 
 
     /*
         Table meta data
      */
-    public static Long popLong(String filePath, long headerSize) {
+    public static Long popLong(String filePath, long headerSize, Random random) {
         if (FileUtil.fileSize(filePath) - headerSize >= 8) {
             try {
                 return TypeToByteUtil.byteArrayToLong(
-                    FileUtil.popLastBytes(filePath, 8)
+                    FileUtil.popRandomBytes(filePath, 8, random)
                 );
-
             } catch (IOException e) {
                 throw new DavaException(
                     BASE_IO_ERROR,
@@ -210,7 +279,21 @@ public class BaseOperationService {
 
     }
 
+    public static void writeLong(String filePath, long longToWrite) {
+        try {
+            FileUtil.writeBytesAppend(
+                filePath,
+                TypeToByteUtil.longToByteArray(longToWrite)
+            );
 
+        } catch (IOException e) {
+            throw new DavaException(
+                BASE_IO_ERROR,
+                "Error writing long to: " + filePath,
+                e
+            );
+        }
+    }
 
 
 

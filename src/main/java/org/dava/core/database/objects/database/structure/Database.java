@@ -4,7 +4,9 @@ import org.dava.core.database.objects.exception.DavaException;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.dava.core.database.objects.exception.ExceptionType.MISSING_TABLE;
 import static org.dava.core.database.objects.exception.ExceptionType.NOT_A_TABLE;
@@ -15,9 +17,14 @@ public class Database {
 
     private Map<String, Table<?>> tables;
 
-    public Map<String, Table<?>> getTables() {
-        return tables;
+
+    public Database(String rootDirectory, List<Class<?>> tableClasses) {
+        this.rootDirectory = rootDirectory;
+        this.tables = tableClasses.stream()
+            .map(classT -> new Table<>(classT, rootDirectory))
+            .collect(Collectors.toMap(Table::getTableName, obj -> obj));
     }
+
 
 
     @SuppressWarnings("unchecked")
@@ -29,6 +36,7 @@ public class Database {
             String tableName = (annotation.name().isEmpty())? row.getClass().getName() : annotation.name();
             Table<?> table = getTableByName(tableName);
 
+            // cast the table to the type for the row
             Type genericSuperclass = table.getClass().getGenericSuperclass();
             if (genericSuperclass instanceof ParameterizedType parameterizedType) {
                 Type[] actualTypeArguments = parameterizedType.getActualTypeArguments();
@@ -65,6 +73,9 @@ public class Database {
     }
 
 
+    /*
+        Getter Setter
+     */
     public String getRootDirectory() {
         return rootDirectory;
     }

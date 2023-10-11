@@ -1,20 +1,22 @@
 package org.dava.core.database.service;
 
 import org.dava.core.database.objects.database.structure.Database;
-import org.dava.core.database.objects.database.structure.Table;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.objects.database.structure.Row;
 import org.dava.core.sql.objects.Select;
 import org.dava.external.annotations.Column;
 
 import java.lang.reflect.*;
+import java.time.temporal.Temporal;
 import java.util.*;
 
 import static org.dava.common.Checks.mapIfNotNull;
-import static org.dava.core.database.objects.exception.ExceptionType.ROW_MISSING_PUBLIC_GETTER;
+import static org.dava.core.database.objects.exception.ExceptionType.*;
 
 
 public class MarshallingService {
+
+    private static final String NOT_A_TABLE_MSG = ". It may be that one of your table objects has a field that isn't supported.";
 
 
     /**
@@ -32,12 +34,20 @@ public class MarshallingService {
      * be validated with the schema as well, and returned as separate parsed rows.
      *
      * @param row the row to validate
-     * @param database the Database object with parsed schema information for each table
      * @return a list of validated and parsed rows.
      * @param <T> row type
      */
-    public static <T> List<Row> parseAndValidateRow(T row, Database database) {
+    public static <T> List<Row> parseRow(T row) {
+        org.dava.external.annotations.Table annotation = Optional.ofNullable(
+            row.getClass().getAnnotation( org.dava.external.annotations.Table.class )
+        ).orElseThrow(
+            () -> new DavaException(NOT_A_TABLE, "Class missing @Table annotation: " + row.getClass().getName() + NOT_A_TABLE_MSG, null)
+        );
 
+        String tableName = (annotation.name().isEmpty())? row.getClass().getSimpleName() : annotation.name();
+
+
+        // TODO check constraints in this method
         // parse rows and apply column constraints
         /*
          *   type,
@@ -60,13 +70,12 @@ public class MarshallingService {
             }
             else {
                 parsedRows.addAll(
-                    parseAndValidateRow(value, database)
+                    parseRow(value)
                 );
             }
-
         }
 
-        Row parsedRow = new Row(columnsToValues);
+        Row parsedRow = new Row(columnsToValues, tableName);
 
         parsedRows.add(parsedRow);
 
@@ -111,7 +120,7 @@ public class MarshallingService {
 
 
     private static boolean isBasicJavaType(Class<?> type) {
-        return isNumericClass(type) || Date.class.isAssignableFrom(type) || type == String.class;
+        return isNumericClass(type) || Temporal.class.isAssignableFrom(type) || type == String.class;
     }
 
     private static boolean isNumericClass(Class<?> type) {

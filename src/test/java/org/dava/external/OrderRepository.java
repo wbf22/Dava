@@ -5,14 +5,14 @@ import org.dava.external.annotations.Query;
 import java.util.List;
 import java.util.Map;
 
-public class OrderRepository extends Repository<OrderTable, String> {
+public class OrderRepository extends Repository<Order, String> {
 
 
 
     @Query(
         query = "select * from order_table"
     )
-    public List<OrderTable> getOrders(Map<String, String> params) {
+    public List<Order> getOrders(Map<String, String> params) {
         return query(params);
     }
 
