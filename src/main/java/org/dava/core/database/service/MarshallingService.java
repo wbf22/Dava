@@ -57,7 +57,7 @@ public class MarshallingService {
          *   check/custom,
          */
         List<Row> parsedRows = new ArrayList<>();
-        Map<String, String> columnsToValues = new HashMap<>();
+        Map<String, Object> columnsToValues = new HashMap<>();
         for (Field field : row.getClass().getDeclaredFields()) {
             Column column = field.getAnnotation(Column.class);
             String columnName = mapIfNotNull(column, Column::name, "");
@@ -101,8 +101,8 @@ public class MarshallingService {
         catch (ReflectiveOperationException e) {
             throw new DavaException(
                 ROW_MISSING_PUBLIC_GETTER,
-                "Row missing public getter for field: " + field.getName() +
-                "Looked for method '" + getterMethodName + "()' but could not find.",
+                "Row missing public getter for field: '" + field.getName() +
+                "' in class '" + row.getClass() + "'. Looked for method '" + getterMethodName + "()' but could not find.",
                 e
             );
         }

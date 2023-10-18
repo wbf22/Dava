@@ -20,10 +20,15 @@ orderTable
   |     |    |--1.index
   |     |    |--2.index
   |     |    '--3.index
-  |     |--total
+  |     |--Total
   |     |    |--$250.index
   |     |    |--$80.index
   |     |    '--$420.index
+  |     |--OrderDate
+  |     |    |--2020
+  |     |    |    |--02/12/2020.index
+  |     |    |    |--02/15/2020.index
+  |     |    |    '--02/18/2020.index
   |--orderTable.csv
   |--orderTable.rowLengths
   '--orderTable.empties

@@ -1,5 +1,6 @@
 package org.dava.core.database.service.type.compression;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
@@ -62,7 +63,7 @@ public class TypeToByteUtil {
         long[] longs = new long[bytes.length/8];
         for (int i = 0; i < longs.length; i++) {
             longs[i] = byteArrayToLong(
-                Arrays.copyOfRange(bytes, i * 8, (i+1) * 8 - 1)
+                Arrays.copyOfRange(bytes, i * 8, (i+1) * 8)
             );
         }
         return longs;

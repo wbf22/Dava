@@ -37,7 +37,7 @@ Steps:
 
 
 
-### Manual
+### manual
 Indices are only created on primary key and marked columns
 
 Steps:

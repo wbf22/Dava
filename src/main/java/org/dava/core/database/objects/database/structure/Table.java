@@ -8,8 +8,8 @@ import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.stream.Collectors;
 
 import static org.dava.core.database.objects.exception.ExceptionType.BASE_IO_ERROR;
 import static org.dava.core.database.objects.exception.ExceptionType.TABLE_PARSE_ERROR;
@@ -17,7 +17,7 @@ import static org.dava.core.database.objects.exception.ExceptionType.TABLE_PARSE
 
 public class Table<T> {
 
-    private List<Column<?>> columns;
+    private LinkedHashMap<String, Column<?>> columns;
     /**
      * Row lengths are added whenever a row is too long for the current length.
      * After a new row length is added, the table will wait 10 more rows before
@@ -48,11 +48,12 @@ public class Table<T> {
         this.tableName = (annotation.name().isEmpty())? tableClass.getSimpleName() : annotation.name();
 
         // TODO later get this stuff from the master sql file
-        columns = new ArrayList<>();
+        columns = new LinkedHashMap<>();
         for (Field field : tableClass.getDeclaredFields()) {
             org.dava.external.annotations.Column columnAnn = field.getAnnotation( org.dava.external.annotations.Column.class );
             String name = (columnAnn == null)? field.getName() : columnAnn.name();
-            columns.add(
+            columns.put(
+                name,
                 new Column<>(name, field.getType())
             );
         }
@@ -74,37 +75,64 @@ public class Table<T> {
         partitions = new ArrayList<>();
         partitions.add(tableName);
 
-
-        // TODO load from storage file
-        rowLengths = loadOrInitRowLengths(partitions);
+        initTableCsvAndRowLengths(partitions);
 
         random = new Random(System.currentTimeMillis());
 
     }
 
-    private Map<String, List<RowLength>> loadOrInitRowLengths(List<String> partitions) {
+    private void initTableCsvAndRowLengths(List<String> partitions) {
         Map<String, List<RowLength>> lengths = new HashMap<>();
         for (String partition : partitions) {
-            if (FileUtil.exists( getTablePath(partition) + ".rowLengths" )) {
+            String path = getTablePath(partition) + ".csv";
+
+            if (!FileUtil.exists(path)) {
+
+                // write column titles
+                String columnTitles = columns.values().stream()
+                    .map(Column::getName)
+                    .reduce("", (acc, n) -> acc + "," + n )
+                    .substring(1) + "\n";
+                byte[] bytes = columnTitles.getBytes(StandardCharsets.UTF_8);
+                try {
+                    FileUtil.writeBytes(
+                        path,
+                        0,
+                        bytes
+                    );
+                } catch (IOException e) {
+                    throw new DavaException(
+                        BASE_IO_ERROR,
+                        "Error writing titles in table: " + tableName,
+                        e
+                    );
+                }
+
+                // add length of titles
+                lengths.put(
+                    partition,
+                    new ArrayList<>(List.of(new RowLength(0, bytes.length)))
+                );
+                saveRowLengths(lengths.get(partition), partition);
+
+                // set table row count to 1
+                setSize(partition, 1L);
+            }
+            else {
+                // load row lengths
                 lengths.put(
                     partition,
                     parseRowLengths(partition)
                 );
             }
-            else {
-                lengths.put(
-                    partition,
-                    new ArrayList<>(List.of(new RowLength(-1, 0)))
-                );
-            }
         }
-        return lengths;
+        rowLengths = lengths;
     }
 
     public List<RowLength> parseRowLengths(String partition) {
         try {
             byte[] bytes = FileUtil.readBytes(
-                getTablePath(partition)
+                getTablePath(partition) + ".rowLengths"
             );
 
             return RowLength.deserializeList(bytes);
@@ -213,11 +241,13 @@ public class Table<T> {
             saveRowLengths(lengths, partition);
         }
         else if (destinationRow - last.getRow() > 10) {
-            int newLength = (last.getLength() + length) / 2;
-            lengths.add(
-                new RowLength(destinationRow, newLength)
-            );
-            saveRowLengths(lengths, partition);
+            if ( last.getLength() - length > 10) {
+                int newLength = (last.getLength() + length) / 2;
+                lengths.add(
+                    new RowLength(destinationRow, newLength)
+                );
+                saveRowLengths(lengths, partition);
+            }
         }
     }
 
@@ -238,6 +268,9 @@ public class Table<T> {
     }
 
 
+    public Column<?> getColumn(String columnName) {
+        return columns.get(columnName);
+    }
 
 
 
@@ -248,7 +281,7 @@ public class Table<T> {
     public List<RowLength> getRowLengths(String partition) {
         return rowLengths.get(partition);
     }
-    public List<Column<?>> getColumns() {
+    public LinkedHashMap<String, Column<?>> getColumns() {
         return columns;
     }
 

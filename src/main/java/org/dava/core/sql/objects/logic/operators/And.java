@@ -14,6 +14,11 @@ public class And implements Condition, Operator{
     private Condition rightCondition;
 
 
+    public And(Condition leftCondition, Condition rightCondition) {
+        this.leftCondition = leftCondition;
+        this.rightCondition = rightCondition;
+    }
+
     @Override
     public boolean filter(Row row) {
         return leftCondition.filter(row) && rightCondition.filter(row);

@@ -1,6 +1,7 @@
 package org.dava.common;
 
 
+import java.lang.reflect.Type;
 import java.util.*;
 import java.util.function.Function;
 import java.util.logging.Level;
@@ -29,6 +30,26 @@ public class Checks {
             return desiredType.cast(obj);
         }
         String message = CAST_FAIL + obj.getClass().getName() + " to " + desiredType.getName();
+        log.log(Level.SEVERE, message);
+        throw new CheckException(message, null);
+    }
+
+
+    /**
+     * Tries to cast the object to the desired type. Throwing an exception if not possible.
+     * Provide your param type with 'new ParamType<List<String>>().getType()' to cast to a
+     * list of strings or whatever type you need.
+     *
+     * @param obj object to cast
+     * @param desiredType type to cast too
+     * @return cast object of type T
+     * @param <T> type
+     */
+    public static <T> T safeCastParameterized(Object obj, Type desiredType) {
+        if (desiredType instanceof Class && ((Class<?>) desiredType).isInstance(obj)) {
+            return ((Class<T>) desiredType).cast(obj);
+        }
+        String message = CAST_FAIL + obj.getClass().getName() + " to " + desiredType.getTypeName();
         log.log(Level.SEVERE, message);
         throw new CheckException(message, null);
     }
@@ -208,5 +229,33 @@ public class Checks {
         }
     }
 
+    /**
+     * Check if value is null, and if so, returns ifNullThanThisValue. Otherwise, returns
+     * value.
+     * @param value value to check
+     * @param ifNullThanThisValue replacement for value
+     * @return either value or ifNullThanThisValue
+     * @param <T> type
+     */
+    public static <T> T onNull(T value, T ifNullThanThisValue) {
+        return (value == null)? ifNullThanThisValue : value;
+    }
 
+
+    /**
+     * Check if condition is true, and if so, returns mapped value. Otherwise, returns
+     * value as is.
+     * @param value value to map
+     * @param lambda lambda function to map the value
+     * @return either value mapped or as is
+     * @param <T> type
+     */
+    public static <T, R> Object mapIfTrue(boolean condition, T value, Function<T, R> lambda) {
+        return (condition)? lambda.apply(value) : value;
+    }
+
+
+    public static <T> T condition(boolean condition, T ifTrue, T ifFalse) {
+        return (condition)? ifTrue : ifFalse;
+    }
 }

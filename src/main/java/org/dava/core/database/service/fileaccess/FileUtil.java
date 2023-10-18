@@ -2,9 +2,9 @@ package org.dava.core.database.service.fileaccess;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.EnumSet;
 import java.util.Random;
 
 public class FileUtil {
@@ -97,17 +97,14 @@ public class FileUtil {
     }
 
     public static byte[] readBytes(String filePath, long startByte, int numBytes) throws IOException {
-        RandomAccessFile raf = new RandomAccessFile(filePath, "r");
-        raf.seek(startByte); // Set the file pointer to the desired position
+        try (RandomAccessFile raf = new RandomAccessFile(filePath, "r")) {
+            raf.seek(startByte); // Set the file pointer to the desired position
 
-        byte[] buffer = new byte[numBytes];
-        int bytesRead = raf.read(buffer); // Read the specified number of bytes
+            byte[] buffer = new byte[numBytes];
+            int bytesRead = raf.read(buffer); // Read the specified number of bytes
 
-        byte[] data = (bytesRead != -1)? buffer : null;
-
-        raf.close();
-
-        return data;
+            return (bytesRead != -1)? buffer : null;
+        }
     }
 
     public static String readLine(String filePath, long startByte) throws IOException {
@@ -185,8 +182,39 @@ public class FileUtil {
         }
     }
 
-    public static void deleteFile(String filePath) throws IOException {
-        Path path = Paths.get(filePath);
-        Files.delete(path);
+    public static boolean deleteFile(String filePath) throws IOException {
+        if (exists(filePath)) {
+            Path path = Paths.get(filePath);
+            if (!Files.isDirectory(path)) {
+                Files.delete(path);
+                return true;
+            }
+        }
+        return false;
     }
+
+    public static void deleteDirectory(String directoryPath) throws IOException {
+        Path path = Paths.get(directoryPath);
+        Files.walkFileTree(path, EnumSet.noneOf(FileVisitOption.class), Integer.MAX_VALUE, new FileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path path, BasicFileAttributes basicFileAttributes) throws IOException {
+                Files.delete(path); // Delete files
+                return FileVisitResult.CONTINUE;
+            }
+            @Override
+            public FileVisitResult postVisitDirectory(Path path, IOException e) throws IOException {
+                if (path != null) {
+                    Files.delete(path); // Delete directories after their contents
+                    return FileVisitResult.CONTINUE;
+                } else {
+                    throw e;
+                }
+            }
+            @Override
+            public FileVisitResult preVisitDirectory(Path path, BasicFileAttributes basicFileAttributes) { return FileVisitResult.CONTINUE; }
+            @Override
+            public FileVisitResult visitFileFailed(Path path, IOException e) { return FileVisitResult.CONTINUE; }
+        });
+    }
+
 }

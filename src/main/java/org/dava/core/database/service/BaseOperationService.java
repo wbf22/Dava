@@ -1,7 +1,9 @@
 package org.dava.core.database.service;
 
 
+import org.dava.common.ArrayUtil;
 import org.dava.core.database.objects.database.structure.*;
+import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
@@ -9,8 +11,10 @@ import org.dava.core.database.service.type.compression.TypeToByteUtil;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.*;
 
+import static org.dava.common.Checks.safeCast;
 import static org.dava.core.database.objects.exception.ExceptionType.BASE_IO_ERROR;
 
 /**
@@ -26,7 +30,8 @@ public class BaseOperationService {
 
         // serialize row
         String partition = table.getRandomPartition();
-        byte[] bytes = Row.serialize(table, row.getColumnsToValues()).getBytes(StandardCharsets.UTF_8);
+        String rowString = Row.serialize(table, row.getColumnsToValues()) + "\n";
+        byte[] bytes = rowString.getBytes(StandardCharsets.UTF_8);
 
         // get random empty row or use last row in the table
         Long destinationRow = table.getEmptyRow(partition);
@@ -34,6 +39,10 @@ public class BaseOperationService {
             table.getSize(partition) : destinationRow;
 
         IndexRoute route = IndexRoute.of(partition, destinationRow, table);
+        if (bytes.length < route.getLengthInTable()) {
+            rowString = rowString.substring(0, rowString.length()-1) + " ".repeat(route.getLengthInTable() - bytes.length) + "\n";
+        }
+        bytes = rowString.getBytes(StandardCharsets.UTF_8);
 
         // add to table
         String path = table.getTablePath(route.getPartition()) + ".csv";
@@ -60,15 +69,23 @@ public class BaseOperationService {
 
         if (index) {
             // add to index csv
-            for (Map.Entry<String, String> columnValue : row.getColumnsToValues().entrySet()) {
-                String indexPath = Index.buildIndexRootPath(
+            for (Map.Entry<String, Object> columnValue : row.getColumnsToValues().entrySet()) {
+                String folderPath = Index.buildIndexRootPath(
                     database.getRootDirectory(),
                     table.getTableName(),
                     route.getPartition(),
-                    columnValue.getKey()
+                    table.getColumn(columnValue.getKey()),
+                    columnValue.getValue()
                 );
 
-                addToIndex(indexPath, columnValue.getValue(), destinationRow);
+                Object value = columnValue.getValue();
+                if (Date.isDateSupportedDateType( table.getColumn(columnValue.getKey()).getType() )) {
+                    value = Date.of(
+                        value.toString(),
+                        table.getColumn(columnValue.getKey()).getType()
+                    ).getDateWithoutTime().toString();
+                }
+                addToIndex(folderPath, value, destinationRow);
             }
         }
 
@@ -97,63 +114,226 @@ public class BaseOperationService {
     /*
         Indices
      */
-
-    public static List<Row> getAllRowsFromIndex(Database database, String tableName, String columnName, String value) {
+    public static List<Row> getAllRowsFromIndex(String indexPath, String partition, Database database, String tableName) {
         Table<?> table = database.getTableByName(tableName);
 
-        return table.getPartitions().stream()
-            .flatMap(partition -> {
-                String path = Index.buildIndexPath(database.getRootDirectory(), tableName, partition, columnName, value);
+        long[] lines = getLongs(
+                indexPath,
+                true,
+                null,
+                null
+        );
+        long[] countRemoved = Arrays.copyOfRange(lines, 1, lines.length);
 
-                long[] lines = getLongs(
+        return Arrays.stream(countRemoved).sequential()
+                .mapToObj(line -> getLineFromPartition(partition, table, line))
+                .map(line -> new Row(line, table))
+                .toList();
+    }
+
+    /**
+     * Gets rows from the table from start to end row. If the table has multiple partitions
+     * the rows be stored returned starting from the first partition to the last.
+     *
+     * @return a list of rows of size 0 - (endRow - startRow)
+     */
+    public static List<Row> getRowsFromIndex(Database database, String tableName, String columnName, String value, long startRow, long endRow) {
+        Table<?> table = database.getTableByName(tableName);
+
+        List<Row> rows = new ArrayList<>();
+        for(int i = 0; i < table.getPartitions().size(); i++) {
+            String partition = table.getPartitions().get(i);
+            String path = Index.buildIndexPath(database.getRootDirectory(), tableName, partition, table.getColumn(columnName), value);
+
+            long[] lines = getLongs(
                     path,
-                    true,
-                    null,
-                    null
-                );
-                long[] countRemoved = Arrays.copyOfRange(lines, 1, lines.length);
+                    false,
+                    8 + startRow * 8,
+                    (int) ((endRow - startRow) * 8)
+            );
 
-                return Arrays.stream(countRemoved).sequential()
+            rows.addAll(
+                Arrays.stream(lines).sequential()
                     .mapToObj(line -> getLineFromPartition(partition, table, line))
-                    .map(line -> new Row(line, table));
+                    .map(line -> new Row(line, table))
+                    .toList()
+            );
+
+            if (rows.size() >= endRow - startRow)
+                return rows;
+
+        }
+        return rows;
+    }
+
+    public static List<Row> getAllAfterDate(Database database, String tableName, String columnName, Date<?> date) {
+        int year = date.getYear();
+        Table<?> table = database.getTableByName(tableName);
+        Column<?> column = table.getColumn(columnName);
+
+        return table.getPartitions().parallelStream()
+            .flatMap(partition -> {
+                String path = Index.buildColumnPath(database.getRootDirectory(), tableName, partition, columnName);
+                File[] yearFolders = FileUtil.listFiles(path);
+
+                List<Row> rows = new ArrayList<>();
+                for (File yearFolder : yearFolders) {
+                    int folderYear = Integer.parseInt(yearFolder.getName());
+                    if (folderYear > year) {
+                        rows.addAll(
+                            Arrays.stream(FileUtil.listFiles(
+                                Index.buildIndexRootPathForDate(database.getRootDirectory(), tableName, partition, columnName, Integer.toString(folderYear))
+                            )).sequential()
+                            .flatMap( indexFile -> getAllRowsFromIndex( indexFile.getPath(), partition, database, tableName ).stream() )
+                            .toList()
+                        );
+                    }
+                    else if (folderYear == year) {
+                        rows.addAll(
+                            Arrays.stream(FileUtil.listFiles(
+                                Index.buildIndexRootPathForDate(database.getRootDirectory(), tableName, partition, columnName, Integer.toString(folderYear))
+                            )).sequential()
+                            .filter( indexFile -> date.isAfter( Date.of(indexFile.getName(), column.getType()) ) )
+                            .flatMap( indexFile -> getAllRowsFromIndex( indexFile.getPath(), partition, database, tableName ).stream() )
+                            .toList()
+                        );
+                    }
+                }
+
+                return rows.stream();
             })
             .toList();
     }
 
-    public static List<Row> getRowsFromIndex(
-        Database database,
-        String tableName,
-        String columnName,
-        String value,
-        long startRow,
-        long endRow
-    ) {
+    /**
+     *   |     |--OrderDate
+     *   |     |    |--2019
+     *   |     |    |    |--1/22/2019.index
+     *   |     |    |    |--4/12/2019.index
+     *   |     |    |    '--5/3/2019.index
+     *   |     |    |--2020
+     *   |     |    |    |--1/1/2020.index
+     *   |     |    |    |--1/3/2020.index
+     *   |     |    |    '--1/4/2020.index
+     *
+     *
+     *   |     |--OrderDate
+     *   |     |    |--2020
+     *   |     |    |    |--1/2/2020.index
+     *   |     |    |    |--1/5/2020.index
+     *   |     |    |    '--1/6/2020.index
+     *
+     *   02/12/2020.index values:
+     *     2020-2-12T07:5:57.703778
+     *     2020-2-12T07:16:57.703778
+     *     2020-2-12T07:21:57.703778
+     *
+     *
+     *   sql after calls return unsorted unless called with order by
+     */
+    public static List<Row> getRowsAfterDate(Database database, String tableName, String columnName, Date<?> date, long startRow, long endRow, boolean descending) {
+
         Table<?> table = database.getTableByName(tableName);
 
-        return table.getPartitions().stream()
+        // all year folders within partitions, filtered by after date, sorted descending or ascending
+        List<Integer> yearDates = table.getPartitions().stream()
             .flatMap(partition -> {
-                String path = Index.buildIndexPath(database.getRootDirectory(), tableName, partition, columnName, value);
-
-                long[] lines = getLongs(
-                        path,
-                        false,
-                        8 + startRow * 8,
-                        (int) ((endRow - startRow) * 8)
-                );
-
-
-                return Arrays.stream(lines).sequential()
-                    .mapToObj(line -> getLineFromPartition(partition, table, line))
-                    .map(line -> new Row(line, table));
+                String columnPath = Index.buildColumnPath(database.getRootDirectory(), tableName, partition, columnName);
+                return Arrays.stream(FileUtil.listFiles(columnPath)).sequential()
+                    .map(yearFolder -> Integer.parseInt(yearFolder.getName().split("\\.")[0]))
+                    .filter(fYear -> fYear >= date.getYear())
+                    .sorted(
+                        (descending)? Comparator.reverseOrder() : Integer::compareTo
+                    );
             })
+            .sorted(
+                (descending)? Comparator.reverseOrder() : Comparator.naturalOrder()
+            )
             .toList();
+
+
+
+        List<Row> rows = new ArrayList<>();
+        Comparator<Row> comparator = Comparator.comparing(
+                row -> safeCast(row.getValue(columnName), Date.class)
+        );
+        comparator = (descending)? comparator.reversed() : comparator;
+
+        long count = 0L;
+        int size = (int) (endRow - startRow);
+        for (Integer year : yearDates) {
+            // get date files for year
+            List<LocalDate> indicesForLocalDates = table.getPartitions().stream()
+                    .flatMap(partition -> {
+                        String yearPath = Index.buildIndexRootPathForDate(database.getRootDirectory(), tableName, partition, columnName, year.toString());
+                        return Arrays.stream(FileUtil.listFiles(yearPath)).sequential()
+                                .map( indexFile -> LocalDate.parse(indexFile.getName().split("\\.")[0]) );
+                    })
+                    .sorted(
+                            (descending)? Comparator.reverseOrder() : Comparator.naturalOrder()
+                    )
+                    .toList();
+
+            // for each of the indexLocalDate in indicesForLocalDates, count up until you get to start row
+            for (LocalDate indexLocalDate : indicesForLocalDates) {
+                if (count <= startRow) {
+                    count += table.getPartitions().stream()
+                            .map(partition -> {
+                                String path = Index.buildIndexPathForDate(database.getRootDirectory(), tableName, partition, columnName, indexLocalDate);
+                                return getCountForIndexPath(path);
+                            })
+                            .reduce(Long::sum)
+                            .orElse(0L);
+                }
+
+
+                if (count > startRow) {
+                    List<Row> returned = table.getPartitions().parallelStream()
+                            .flatMap(partition -> {
+                                String path = Index.buildIndexPathForDate(database.getRootDirectory(), tableName, partition, columnName, indexLocalDate);
+                                return getAllRowsFromIndex(path, partition, database, tableName).stream();
+                            })
+                            .toList();
+
+                    rows.addAll(returned);
+
+                    // once you have enough rows, sort the rows descending or ascending and return the sublist of the requested size
+                    if (rows.size() > size) {
+                        return rows.stream()
+                                .sorted( comparator )
+                                .toList()
+                                .subList(0, size);
+                    }
+                }
+            }
+        }
+
+        return rows.stream()
+                .sorted( comparator )
+                .toList();
     }
 
+
+    /**
+     * Gets longs from a file from startByte to numBytes or the end of the file (whichever comes first).
+     * If allLines is true then startByte and numBytes are ignored and
+     */
     private static long[] getLongs(String filePath, boolean allLines, Long startByte, Integer numBytes) {
         try {
 
-            byte[] bytes = (allLines)? FileUtil.readBytes(filePath)
-                : FileUtil.readBytes(filePath, startByte, numBytes);
+            byte[] bytes;
+            if (allLines) {
+                bytes = FileUtil.readBytes(filePath);
+            }
+            else {
+                long fileSize = FileUtil.fileSize(filePath);
+                numBytes = Math.toIntExact(
+                    (fileSize < numBytes + startByte) ? fileSize - startByte : numBytes
+                );
+                bytes = FileUtil.readBytes(filePath, startByte, numBytes);
+            }
+            if (bytes == null)
+                return new long[0];
 
             return TypeToByteUtil.byteArrayToLongArray(bytes);
         } catch (IOException e) {
@@ -170,7 +350,7 @@ public class BaseOperationService {
         IndexRoute entry = IndexRoute.of(partition, indexRow, table);
         try {
             return FileUtil.readFile(
-                table.getTablePath(entry.getPartition()),
+                table.getTablePath(entry.getPartition()) + ".csv",
                 entry.getOffsetInTable(),
                 entry.getLengthInTable()
             );
@@ -218,7 +398,7 @@ public class BaseOperationService {
     }
 
 
-    public static void addToIndex(String folderPath, String value, long rowNumber) {
+    public static void addToIndex(String folderPath, Object value, long rowNumber) {
         try {
             // make index file if it doesn't exist
             if (!FileUtil.exists(folderPath)) {
@@ -227,7 +407,7 @@ public class BaseOperationService {
 
             // increment index count
             String path = folderPath + "/" + value + ".index";
-            Long count = 0L;
+            long count = 0L;
             if (FileUtil.exists(path)) {
                 count = getCountForIndexPath(path);
             }
@@ -240,8 +420,6 @@ public class BaseOperationService {
                 TypeToByteUtil.longToByteArray(rowNumber)
             );
 
-
-
         } catch (IOException e) {
             throw new DavaException(
                 BASE_IO_ERROR,
@@ -249,9 +427,6 @@ public class BaseOperationService {
                 e
             );
         }
-
-
-
     }
 
 
