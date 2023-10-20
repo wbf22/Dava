@@ -32,7 +32,7 @@ public class Equals implements Condition {
     @Override
     public List<Row> retrieve(Database database, List<Condition> parentFilters, String from, Long limit, Long offset) {
 
-        List<Row> rows = new ArrayList<>();
+        List<Row> rows;
         if (limit == null && offset == null) {
             Table<?> table = database.getTableByName(from);
             rows = database.getTableByName(from).getPartitions().stream()

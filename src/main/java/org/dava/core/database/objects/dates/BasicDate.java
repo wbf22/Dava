@@ -31,11 +31,7 @@ public class BasicDate extends Date<LocalDate> {
         if (date instanceof BasicDate bDate)
             return localDate.isAfter(bDate.localDate);
 
-        throw new DavaException(
-                DATE_PARSE_ERROR,
-                "Incorrect date type: '" + date.getType().getSimpleName() + "'",
-                null
-        );
+        return localDate.isAfter(date.getDateWithoutTime());
     }
 
     @Override
@@ -43,11 +39,7 @@ public class BasicDate extends Date<LocalDate> {
         if (date instanceof BasicDate bDate)
             return localDate.isBefore(bDate.localDate);
 
-        throw new DavaException(
-                DATE_PARSE_ERROR,
-                "Incorrect date type: '" + date.getType().getSimpleName() + "'",
-                null
-        );
+        return localDate.isBefore(date.getDateWithoutTime());
     }
 
     @Override
@@ -55,11 +47,8 @@ public class BasicDate extends Date<LocalDate> {
         if (start instanceof BasicDate startDate && (end instanceof BasicDate endDate))
             return localDate.isAfter(startDate.localDate) && localDate.isBefore(endDate.localDate);
 
-        throw new DavaException(
-                DATE_PARSE_ERROR,
-                "Incorrect date type(s) in: '" + start.getType().getSimpleName() + "' '" + end.getType().getSimpleName() + "'",
-                null
-        );
+        LocalDate localDate = getDateWithoutTime();
+        return localDate.isAfter(start.getDateWithoutTime()) && localDate.isBefore(end.getDateWithoutTime());
     }
 
     @Override

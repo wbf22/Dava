@@ -1,12 +1,10 @@
 package org.dava.core.sql.objects.conditions;
 
-import org.dava.common.ListUtil;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.database.structure.Database;
 import org.dava.core.database.objects.database.structure.Row;
 import org.dava.core.database.service.BaseOperationService;
 
-import java.util.ArrayList;
 import java.util.List;
 
 public class After <T extends Date<?>> implements Condition {
@@ -33,9 +31,16 @@ public class After <T extends Date<?>> implements Condition {
 
     @Override
     public List<Row> retrieve(Database database, List<Condition> parentFilters, String from, Long limit, Long offset) {
-        List<Row> rows = new ArrayList<>();
+        List<Row> rows;
         if (limit == null && offset == null) {
-            rows = BaseOperationService.getAllAfterDate(database, from, column, date);
+            rows = BaseOperationService.getAllComparingDate(
+                    database,
+                    from,
+                    column,
+                    (yearFolder, dateYear) -> yearFolder > dateYear,
+                    Date::isAfter,
+                    date
+            );
             rows = rows.stream()
                     .filter(row -> parentFilters.parallelStream().allMatch(condition -> condition.filter(row)))
                     .toList();
@@ -47,11 +52,13 @@ public class After <T extends Date<?>> implements Condition {
                 from,
                 limit,
                 offset,
-                (startRow, rowsPerIteration) -> BaseOperationService.getRowsAfterDate(
+                (startRow, rowsPerIteration) -> BaseOperationService.getRowsComparingDate(
                     database,
                     from,
                     column,
                     date,
+                    (folderYear, dateYear) -> folderYear >= dateYear,
+                    Date::isAfter,
                     startRow,
                     startRow + rowsPerIteration,
                     true

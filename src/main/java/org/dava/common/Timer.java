@@ -19,6 +19,10 @@ public class Timer {
         startTime = System.currentTimeMillis();
     }
 
+    public long getElapsed() {
+        return System.currentTimeMillis() - startTime;
+    }
+
 
 
 }

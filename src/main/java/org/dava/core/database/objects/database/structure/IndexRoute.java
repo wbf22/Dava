@@ -67,14 +67,18 @@ public class IndexRoute {
         List<RowLength> rowLengths = table.getRowLengths(partition);
         for (int i = 0; i < rowLengths.size(); i++) {
             RowLength rowL = rowLengths.get(i);
-            long nextRow = (i+1 < rowLengths.size())? rowLengths.get(i+1).getRow() : table.getSize(partition);
+            RowLength nextRowL = (i+1 < rowLengths.size())? rowLengths.get(i+1) : rowLengths.get(rowLengths.size()-1);
+            long nextRow = (i+1 < rowLengths.size())? nextRowL.getRow() : table.getSize(partition);
 
             long mult = (indexRow > nextRow)? nextRow - rowL.getRow() : indexRow - rowL.getRow();
 
             startOfRow += rowL.getLength() * mult;
 
-            if (nextRow >= indexRow) {
+            if (nextRow > indexRow) {
                 return new IndexRoute(partition, indexRow, startOfRow, rowL.getLength());
+            }
+            else if (nextRow == indexRow) {
+                return new IndexRoute(partition, indexRow, startOfRow, nextRowL.getLength());
             }
         }
 

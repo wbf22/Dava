@@ -43,11 +43,7 @@ public class OffsetDate extends Date<OffsetDateTime> {
         if (date instanceof OffsetDate bDate)
             return offsetDateTime.isAfter(bDate.offsetDateTime);
 
-        throw new DavaException(
-                DATE_PARSE_ERROR,
-                "Incorrect date type: '" + date.getType().getSimpleName() + "'",
-                null
-        );
+        return getDateWithoutTime().isAfter(date.getDateWithoutTime());
     }
 
     @Override
@@ -55,11 +51,7 @@ public class OffsetDate extends Date<OffsetDateTime> {
         if (date instanceof OffsetDate bDate)
             return offsetDateTime.isBefore(bDate.offsetDateTime);
 
-        throw new DavaException(
-                DATE_PARSE_ERROR,
-                "Incorrect date type: '" + date.getType().getSimpleName() + "'",
-                null
-        );
+        return getDateWithoutTime().isBefore(date.getDateWithoutTime());
     }
 
     @Override
@@ -67,11 +59,8 @@ public class OffsetDate extends Date<OffsetDateTime> {
         if (start instanceof OffsetDate startDate && (end instanceof OffsetDate endDate))
             return offsetDateTime.isAfter(startDate.offsetDateTime) && offsetDateTime.isBefore(endDate.offsetDateTime);
 
-        throw new DavaException(
-                DATE_PARSE_ERROR,
-                "Incorrect date type(s) in: '" + start.getType().getSimpleName() + "' '" + end.getType().getSimpleName() + "'",
-                null
-        );
+        LocalDate localDate = getDateWithoutTime();
+        return localDate.isAfter(start.getDateWithoutTime()) && localDate.isBefore(end.getDateWithoutTime());
     }
 
     @Override

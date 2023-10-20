@@ -1,7 +1,6 @@
 package org.dava.core.database.service;
 
 
-import org.dava.common.ArrayUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
@@ -13,6 +12,8 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.*;
+import java.util.function.BiPredicate;
+import java.util.function.Function;
 
 import static org.dava.common.Checks.safeCast;
 import static org.dava.core.database.objects.exception.ExceptionType.BASE_IO_ERROR;
@@ -166,7 +167,17 @@ public class BaseOperationService {
         return rows;
     }
 
-    public static List<Row> getAllAfterDate(Database database, String tableName, String columnName, Date<?> date) {
+    /**
+     * Get's rows by date from both partitions
+     */
+    public static List<Row> getAllComparingDate(
+            Database database,
+            String tableName,
+            String columnName,
+            BiPredicate<Integer, Integer> compareYearsFolderYearDateYear,
+            BiPredicate<Date<?>, Date<?>> compareDatesRowYearDateYear,
+            Date<?> date
+    ) {
         int year = date.getYear();
         Table<?> table = database.getTableByName(tableName);
         Column<?> column = table.getColumn(columnName);
@@ -179,10 +190,10 @@ public class BaseOperationService {
                 List<Row> rows = new ArrayList<>();
                 for (File yearFolder : yearFolders) {
                     int folderYear = Integer.parseInt(yearFolder.getName());
-                    if (folderYear > year) {
+                    if (compareYearsFolderYearDateYear.test(folderYear, year)) {
                         rows.addAll(
                             Arrays.stream(FileUtil.listFiles(
-                                Index.buildIndexRootPathForDate(database.getRootDirectory(), tableName, partition, columnName, Integer.toString(folderYear))
+                                Index.buildIndexYearFolderForDate(database.getRootDirectory(), tableName, partition, columnName, Integer.toString(folderYear))
                             )).sequential()
                             .flatMap( indexFile -> getAllRowsFromIndex( indexFile.getPath(), partition, database, tableName ).stream() )
                             .toList()
@@ -191,10 +202,23 @@ public class BaseOperationService {
                     else if (folderYear == year) {
                         rows.addAll(
                             Arrays.stream(FileUtil.listFiles(
-                                Index.buildIndexRootPathForDate(database.getRootDirectory(), tableName, partition, columnName, Integer.toString(folderYear))
+                                Index.buildIndexYearFolderForDate(database.getRootDirectory(), tableName, partition, columnName, Integer.toString(folderYear))
                             )).sequential()
-                            .filter( indexFile -> date.isAfter( Date.of(indexFile.getName(), column.getType()) ) )
-                            .flatMap( indexFile -> getAllRowsFromIndex( indexFile.getPath(), partition, database, tableName ).stream() )
+                            .flatMap( localDateIndexFile -> {
+                                Date<?> indexLocateDate = Date.of(localDateIndexFile.getName().split("\\.")[0], column.getType());
+
+                                if ( compareDatesRowYearDateYear.test(indexLocateDate, date) ) {
+                                    return getAllRowsFromIndex( localDateIndexFile.getPath(), partition, database, tableName ).stream();
+                                }
+                                else if (indexLocateDate.equals(date.getDateWithoutTime())) {
+                                    return getAllRowsFromIndex( localDateIndexFile.getPath(), partition, database, tableName ).stream()
+                                            .filter( row -> {
+                                                Date<?> rowDate = safeCast(row.getValue(columnName), Date.class);
+                                                return compareDatesRowYearDateYear.test(rowDate, date);
+                                            });
+                                }
+                                return new ArrayList<Row>().stream();
+                            } )
                             .toList()
                         );
                     }
@@ -231,17 +255,28 @@ public class BaseOperationService {
      *
      *   sql after calls return unsorted unless called with order by
      */
-    public static List<Row> getRowsAfterDate(Database database, String tableName, String columnName, Date<?> date, long startRow, long endRow, boolean descending) {
+    public static List<Row> getRowsComparingDate(
+            Database database,
+            String tableName,
+            String columnName,
+            Date<?> date,
+            BiPredicate<Integer, Integer> compareYearsFolderYearDateYear,
+            BiPredicate<Date<?>, Date<?>> compareDatesRowYearDateYear,
+            long startRow,
+            long endRow,
+            boolean descending
+    ) {
 
         Table<?> table = database.getTableByName(tableName);
+        Column<?> column = table.getColumn(columnName);
 
         // all year folders within partitions, filtered by after date, sorted descending or ascending
-        List<Integer> yearDates = table.getPartitions().stream()
+        List<Integer> yearDatesFolders = table.getPartitions().stream()
             .flatMap(partition -> {
                 String columnPath = Index.buildColumnPath(database.getRootDirectory(), tableName, partition, columnName);
                 return Arrays.stream(FileUtil.listFiles(columnPath)).sequential()
                     .map(yearFolder -> Integer.parseInt(yearFolder.getName().split("\\.")[0]))
-                    .filter(fYear -> fYear >= date.getYear())
+                    .filter(fYear -> compareYearsFolderYearDateYear.test(fYear, date.getYear()))
                     .sorted(
                         (descending)? Comparator.reverseOrder() : Integer::compareTo
                     );
@@ -261,14 +296,15 @@ public class BaseOperationService {
 
         long count = 0L;
         int size = (int) (endRow - startRow);
-        for (Integer year : yearDates) {
+        for (Integer year : yearDatesFolders) {
             // get date files for year
             List<LocalDate> indicesForLocalDates = table.getPartitions().stream()
                     .flatMap(partition -> {
-                        String yearPath = Index.buildIndexRootPathForDate(database.getRootDirectory(), tableName, partition, columnName, year.toString());
+                        String yearPath = Index.buildIndexYearFolderForDate(database.getRootDirectory(), tableName, partition, columnName, year.toString());
                         return Arrays.stream(FileUtil.listFiles(yearPath)).sequential()
                                 .map( indexFile -> LocalDate.parse(indexFile.getName().split("\\.")[0]) );
                     })
+
                     .sorted(
                             (descending)? Comparator.reverseOrder() : Comparator.naturalOrder()
                     )
@@ -279,8 +315,23 @@ public class BaseOperationService {
                 if (count <= startRow) {
                     count += table.getPartitions().stream()
                             .map(partition -> {
-                                String path = Index.buildIndexPathForDate(database.getRootDirectory(), tableName, partition, columnName, indexLocalDate);
-                                return getCountForIndexPath(path);
+                                Date<?> indexLocateDate = Date.of(indexLocalDate.toString(), LocalDate.class);
+
+                                if ( compareDatesRowYearDateYear.test(indexLocateDate, date) ) {
+                                    String path = Index.buildIndexPathForDate(database.getRootDirectory(), tableName, partition, columnName, indexLocalDate);
+                                    return getCountForIndexPath(path);
+                                }
+                                else if (indexLocalDate.equals(date.getDateWithoutTime())) {
+                                    String path = Index.buildIndexPathForDate(database.getRootDirectory(), tableName, partition, columnName, indexLocalDate);
+                                    return (long) getAllRowsFromIndex(path, partition, database, tableName).stream()
+                                            .filter(row -> {
+                                                Date<?> rowDate = safeCast(row.getValue(columnName), Date.class);
+                                                return compareDatesRowYearDateYear.test(rowDate, date);
+                                            })
+                                            .toList()
+                                            .size();
+                                }
+                                return 0L;
                             })
                             .reduce(Long::sum)
                             .orElse(0L);
@@ -294,6 +345,15 @@ public class BaseOperationService {
                                 return getAllRowsFromIndex(path, partition, database, tableName).stream();
                             })
                             .toList();
+
+                    if (indexLocalDate.getYear() == year) {
+                        returned = returned.stream()
+                                .filter(row -> {
+                                    Date<?> rowDate = safeCast(row.getValue(columnName), Date.class);
+                                    return compareDatesRowYearDateYear.test(rowDate, date);
+                                })
+                                .toList();
+                    }
 
                     rows.addAll(returned);
 
@@ -312,7 +372,6 @@ public class BaseOperationService {
                 .sorted( comparator )
                 .toList();
     }
-
 
     /**
      * Gets longs from a file from startByte to numBytes or the end of the file (whichever comes first).
@@ -396,7 +455,6 @@ public class BaseOperationService {
         }
 
     }
-
 
     public static void addToIndex(String folderPath, Object value, long rowNumber) {
         try {

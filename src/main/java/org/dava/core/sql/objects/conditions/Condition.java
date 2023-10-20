@@ -34,7 +34,7 @@ public interface Condition {
 
         List<Row> rows = new ArrayList<>();
         long startRow = offset;
-        long rowsPerIteration = 3L * limit / (4L * database.getTableByName(from).getPartitions().size());
+        long rowsPerIteration = (long) (limit * (1.1 + .2 * parentFilters.size())) / database.getTableByName(from).getPartitions().size();
         boolean done = false;
         while (!done) {
             List<Row> retrieved = functionToGetRows.apply(startRow, startRow + rowsPerIteration);

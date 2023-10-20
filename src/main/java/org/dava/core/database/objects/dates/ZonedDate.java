@@ -32,11 +32,7 @@ public class ZonedDate extends Date<ZonedDateTime> {
         if (date instanceof ZonedDate bDate)
             return zonedDateTime.isAfter(bDate.zonedDateTime);
 
-        throw new DavaException(
-                DATE_PARSE_ERROR,
-                "Incorrect date type: '" + date.getType().getSimpleName() + "'",
-                null
-        );
+        return getDateWithoutTime().isAfter(date.getDateWithoutTime());
     }
 
     @Override
@@ -44,11 +40,7 @@ public class ZonedDate extends Date<ZonedDateTime> {
         if (date instanceof ZonedDate bDate)
             return zonedDateTime.isBefore(bDate.zonedDateTime);
 
-        throw new DavaException(
-                DATE_PARSE_ERROR,
-                "Incorrect date type: '" + date.getType().getSimpleName() + "'",
-                null
-        );
+        return getDateWithoutTime().isBefore(date.getDateWithoutTime());
     }
 
     @Override
@@ -56,11 +48,8 @@ public class ZonedDate extends Date<ZonedDateTime> {
         if (start instanceof ZonedDate startDate && (end instanceof ZonedDate endDate))
             return zonedDateTime.isAfter(startDate.zonedDateTime) && zonedDateTime.isBefore(endDate.zonedDateTime);
 
-        throw new DavaException(
-                DATE_PARSE_ERROR,
-                "Incorrect date type(s) in: '" + start.getType().getSimpleName() + "' '" + end.getType().getSimpleName() + "'",
-                null
-        );
+        LocalDate localDate = getDateWithoutTime();
+        return localDate.isAfter(start.getDateWithoutTime()) && localDate.isBefore(end.getDateWithoutTime());
     }
 
     @Override

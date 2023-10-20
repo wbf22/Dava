@@ -19,12 +19,12 @@ public class Index {
     public static String buildIndexRootPath(String databaseRoot, String tableName, String partition, Column<?> column, Object value) {
         if ( value instanceof Date<?> || Date.isDateSupportedDateType(column.getType()) ) {
             Date<?> date = (value instanceof Date<?> dateFromValue)? dateFromValue : Date.of(value.toString(), column.getType());
-            return buildIndexRootPathForDate(databaseRoot, tableName, partition, column.getName(), date.getYear().toString());
+            return buildIndexYearFolderForDate(databaseRoot, tableName, partition, column.getName(), date.getYear().toString());
         }
         return buildColumnPath(databaseRoot, tableName, partition, column.getName());
     }
 
-    public static String buildIndexRootPathForDate(String databaseRoot, String tableName, String partition, String columnName, String year) {
+    public static String buildIndexYearFolderForDate(String databaseRoot, String tableName, String partition, String columnName, String year) {
         return buildColumnPath(databaseRoot, tableName, partition, columnName) + "/" + year;
     }
 
