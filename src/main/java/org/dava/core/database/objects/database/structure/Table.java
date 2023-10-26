@@ -75,13 +75,13 @@ public class Table<T> {
         partitions = new ArrayList<>();
         partitions.add(tableName);
 
-        initTableCsvAndRowLengths(partitions);
+        initTableCsv(partitions);
 
         random = new Random(System.currentTimeMillis());
 
     }
 
-    private void initTableCsvAndRowLengths(List<String> partitions) {
+    private void initTableCsv(List<String> partitions) {
         Map<String, List<RowLength>> lengths = new HashMap<>();
         for (String partition : partitions) {
             String path = getTablePath(partition) + ".csv";
@@ -108,41 +108,11 @@ public class Table<T> {
                     );
                 }
 
-                // add length of titles
-                lengths.put(
-                    partition,
-                    new ArrayList<>(List.of(new RowLength(0, bytes.length)))
-                );
-                saveRowLengths(lengths.get(partition), partition);
-
                 // set table row count to 1
                 setSize(partition, 1L);
             }
-            else {
-                // load row lengths
-                lengths.put(
-                    partition,
-                    parseRowLengths(partition)
-                );
-            }
         }
         rowLengths = lengths;
-    }
-
-    public List<RowLength> parseRowLengths(String partition) {
-        try {
-            byte[] bytes = FileUtil.readBytes(
-                getTablePath(partition) + ".rowLengths"
-            );
-
-            return RowLength.deserializeList(bytes);
-        } catch (Exception e) {
-            throw new DavaException(
-                BASE_IO_ERROR,
-                "Error getting row lengths for table : " + tableName + partition,
-                e
-            );
-        }
     }
 
     public DavaException makeTableParseError(String message) {
@@ -161,8 +131,8 @@ public class Table<T> {
      * Get an empty row in the table.
      * @return next empty row in the table, or null there are no empty rows.
      */
-    public Long getEmptyRow(String partition) {
-        return BaseOperationService.popLong(getTablePath(partition) + ".empties", 8, random);
+    public IndexRoute getEmptyRow(String partition) {
+        return BaseOperationService.popEmpty(getTablePath(partition) + ".empties", 8, random);
     }
 
     public void makeEmtpiesFileIfDoesntExist(String partition) throws IOException {
@@ -179,19 +149,6 @@ public class Table<T> {
     public void writeEmptyRow(long row) {
         String partition = getRandomPartition();
         BaseOperationService.writeLong(getTablePath(partition), row);
-    }
-
-    public long getRowLength(long row, String partition) {
-        List<RowLength> lengths = rowLengths.get(partition);
-        for (int i = 0; i < lengths.size(); i++) {
-            RowLength rowL = lengths.get(i);
-            long nextRow = (i+1 < lengths.size())? lengths.get(i+1).getRow() : getSize(partition);
-
-            if (nextRow > row) {
-                return rowL.getLength();
-            }
-        }
-        return lengths.get(lengths.size() - 1).getLength();
     }
 
     /**
@@ -230,27 +187,6 @@ public class Table<T> {
         return partitions.get(random.nextInt(0, partitions.size()));
     }
 
-
-    public void addRowLengthIfNeeded(int length, Long destinationRow, String partition) {
-        List<RowLength> lengths = rowLengths.get(partition);
-        RowLength last = lengths.get(lengths.size() - 1);
-        if (length > last.getLength()) {
-            lengths.add(
-                new RowLength(destinationRow, length)
-            );
-            saveRowLengths(lengths, partition);
-        }
-        else if (destinationRow - last.getRow() > 10) {
-            if ( last.getLength() - length > 10) {
-                int newLength = (last.getLength() + length) / 2;
-                lengths.add(
-                    new RowLength(destinationRow, newLength)
-                );
-                saveRowLengths(lengths, partition);
-            }
-        }
-    }
-
     public void saveRowLengths(List<RowLength> lengths, String partition) {
         try {
             FileUtil.writeBytes(
@@ -277,10 +213,6 @@ public class Table<T> {
     /*
     Getter Setters
      */
-
-    public List<RowLength> getRowLengths(String partition) {
-        return rowLengths.get(partition);
-    }
     public LinkedHashMap<String, Column<?>> getColumns() {
         return columns;
     }

@@ -1,7 +1,5 @@
 package org.dava.common.logger;
 
-import org.dava.common.ansi.AnsiColor;
-
 public enum Level {
 
     ERROR(AnsiColor.RED.BOLD()),

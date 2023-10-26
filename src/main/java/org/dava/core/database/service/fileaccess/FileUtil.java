@@ -4,8 +4,7 @@ import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.util.EnumSet;
-import java.util.Random;
+import java.util.*;
 
 public class FileUtil {
 
@@ -47,6 +46,56 @@ public class FileUtil {
         fileInputStream.close();
 
         return fileContent;
+    }
+
+    public static String readFile(String filePath, long startByte, int numBytes) throws IOException {
+        byte[] bytes = readBytes(filePath, startByte, numBytes);
+        return (bytes != null)? new String(bytes, StandardCharsets.UTF_8) : null;
+    }
+
+    public static byte[] readBytes(String filePath, long startByte, int numBytes) throws IOException {
+        try (RandomAccessFile raf = new RandomAccessFile(filePath, "r")) {
+            raf.seek(startByte); // Set the file pointer to the desired position
+
+            byte[] buffer = new byte[numBytes];
+            int bytesRead = raf.read(buffer); // Read the specified number of bytes
+
+            return (bytesRead != -1)? buffer : null;
+        }
+    }
+
+    public static List<Object> readBytes(String filePath, List<Long> startBytes, List<Long> numBytes) throws IOException {
+        try (RandomAccessFile raf = new RandomAccessFile(filePath, "r")) {
+
+            List<Object> reads = new ArrayList<>();
+            for (int i = 0; i < startBytes.size(); i++) {
+                raf.seek( startBytes.get(i) ); // Set the file pointer to the desired position
+
+                byte[] buffer = new byte[ Math.toIntExact( numBytes.get(i) ) ];
+                int bytesRead = raf.read(buffer); // Read the specified number of bytes
+
+//                Byte[] read = new Byte[buffer.length];
+//                IntStream.range(0, buffer.length)
+//                        .forEach(j -> read[j] = buffer[j]);
+
+                reads.add(
+                        (bytesRead != -1)? buffer : null
+                );
+            }
+
+            return reads;
+        }
+    }
+
+    public static String readLine(String filePath, long startByte) throws IOException {
+        RandomAccessFile raf = new RandomAccessFile(filePath, "r");
+        raf.seek(startByte); // Set the file pointer to the desired position
+
+        String data = raf.readLine();
+
+        raf.close();
+
+        return data;
     }
 
     public static void writeFile(String desitnationPath, String fileContents) throws IOException {
@@ -91,40 +140,38 @@ public class FileUtil {
         }
     }
 
-    public static String readFile(String filePath, long startByte, int numBytes) throws IOException {
-        byte[] bytes = readBytes(filePath, startByte, numBytes);
-        return (bytes != null)? new String(bytes, StandardCharsets.UTF_8) : null;
-    }
-
-    public static byte[] readBytes(String filePath, long startByte, int numBytes) throws IOException {
-        try (RandomAccessFile raf = new RandomAccessFile(filePath, "r")) {
-            raf.seek(startByte); // Set the file pointer to the desired position
-
-            byte[] buffer = new byte[numBytes];
-            int bytesRead = raf.read(buffer); // Read the specified number of bytes
-
-            return (bytesRead != -1)? buffer : null;
-        }
-    }
-
-    public static String readLine(String filePath, long startByte) throws IOException {
-        RandomAccessFile raf = new RandomAccessFile(filePath, "r");
-        raf.seek(startByte); // Set the file pointer to the desired position
-
-        String data = raf.readLine();
-
-        raf.close();
-
-        return data;
-    }
-
     public static void createDirectoriesIfNotExist(String directoryPath) throws IOException {
         Path path = Paths.get(directoryPath);
         Files.createDirectories(path);
     }
 
+    public static void moveFilesToDirectory(List<File> sourceFiles, String destinationDirectory) throws IOException {
+        File destinationDir = new File(destinationDirectory);
+        if (!destinationDir.exists()) {
+            boolean created = destinationDir.mkdirs();
+            if (!created) {
+                throw new IOException("DAVA Failed to create directory: " + destinationDirectory);
+            }
+        }
+
+        for (File sourceFile : sourceFiles) {
+            Path sourcePath = sourceFile.toPath();
+            Path destinationPath = destinationDir.toPath().resolve(sourceFile.getName());
+
+            Files.move(sourcePath, destinationPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
     public static boolean createFile(String filePath) throws IOException {
         return new File(filePath).createNewFile();
+    }
+
+    public static boolean createFile(String filePath, byte[] content) throws IOException {
+        File newFile = new File(filePath);
+        boolean success = newFile.createNewFile();
+        writeBytes(filePath, 0, content);
+
+        return success;
     }
 
     public static boolean renameFile(String oldFilePath, String newFilePath) {
@@ -141,24 +188,34 @@ public class FileUtil {
         return new File(path).listFiles();
     }
 
+    public static List<File> getSubFolders(String path) {
+        File[] files = FileUtil.listFiles(path);
+        if (files != null && files.length > 0) {
+            return Arrays.stream(files)
+                .filter(File::isDirectory)
+                .toList();
+        }
+        return new ArrayList<>();
+    }
+
     public static boolean exists(String filePath) {
         File file = new File(filePath);
         return file.exists();
     }
 
-    public static long fileSize(String filePath) {
+    public static Long fileSize(String filePath) {
         File file = new File(filePath);
         return file.length();
     }
 
-    public static byte[] popRandomBytes(String filePath, int bytesToPop, Random random) throws IOException {
+    public static byte[] popRandomBytes(String filePath, int headerBytes, int bytesToPop, Random random) throws IOException {
         File file = new File(filePath);
 
         try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
             // get a random set of bytes
             long startByte = (
-                random.nextLong( 0, raf.length()/bytesToPop )
-            ) * bytesToPop;
+                random.nextLong( 0, raf.length()-headerBytes/bytesToPop )
+            ) * bytesToPop + headerBytes;
             raf.seek(startByte);
             byte[] buffer = new byte[bytesToPop];
             int bytesRead = raf.read(buffer);
@@ -168,7 +225,7 @@ public class FileUtil {
             long endStartByte = raf.length() - bytesToPop;
             raf.seek(endStartByte);
             byte[] endBuffer = new byte[bytesToPop];
-            int endBytesRead = raf.read(buffer);
+            int endBytesRead = raf.read(endBuffer);
             byte[] endData = (endBytesRead != -1)? endBuffer : null;
 
             // switch the two

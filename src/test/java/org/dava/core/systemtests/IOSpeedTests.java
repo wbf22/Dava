@@ -1,9 +1,12 @@
-package org.dava.core.speedtests;
+package org.dava.core.systemtests;
 
+import org.dava.core.database.service.fileaccess.FileUtil;
+import org.dava.core.database.service.type.compression.TypeToByteUtil;
 import org.junit.jupiter.api.Test;
 
 import java.io.*;
-import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 
 class IOSpeedTests {
     /**
@@ -18,8 +21,10 @@ class IOSpeedTests {
      *    servers)
      *  - Reading all bytes and then splitting by newlines is comparable in speed to reading a single
      *    line from a file until you get like 166 lines.
-     *  - making an empty file is faster than a empty directory
+     *  - making an empty file is faster than an empty directory
      *  - reading a file name is slightly faster than reading a one line file
+     *  - reading individual index files is can be x500 times slower than reading one large index
+     *  - reading a specific line (random access) is slower than reading all lines until the file is over 1000 lines
      */
 
 
@@ -211,7 +216,7 @@ class IOSpeedTests {
             System.out.println(System.currentTimeMillis() - time);
 
             long rtime = System.currentTimeMillis();
-            String rRow = FileUtil.readLineFromFile(NUM_ROWS + ".csv", NUM_ROWS/2, true);
+            String rRow = FileUtil.readLine(NUM_ROWS + ".csv", NUM_ROWS/2);
             System.out.print("reading one line from large file: ");
             System.out.println(System.currentTimeMillis() - rtime);
 
@@ -310,5 +315,153 @@ class IOSpeedTests {
 
     }
 
+    @Test
+    void readSingleLineIndices_vs_oneFileWithAllIndices() throws IOException {
+        /*
+            TEST RESULTS:
+                read each single line index: 2372
+                read all lines index: 5
+
+            reading all lines is a lot faster than reading individual line files
+         */
+
+
+        int ITERATIONS = 50000;
+
+        File directory = new File("one_rows");
+        directory.mkdirs();
+        for (int i = 0; i < ITERATIONS; i++) {
+            FileUtil.writeFile("one_rows/single_line_index_" + i + ".index", "25");
+        }
+        for (int i = 0; i < ITERATIONS; i++) {
+            FileUtil.writeBytes("one_rows/all_lines_index.index", i * 8, TypeToByteUtil.longToByteArray(25L));
+        }
+
+
+        long time = System.currentTimeMillis();
+        for (int i = 0; i < ITERATIONS; i++) {
+            byte[] bytes = FileUtil.readBytes("one_rows/single_line_index_" + i + ".index");
+        }
+        System.out.print("read each single line index: ");
+        System.out.println(System.currentTimeMillis() - time);
+
+
+        time = System.currentTimeMillis();
+        byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index");
+        System.out.print("read all lines index: ");
+        System.out.println(System.currentTimeMillis() - time);
+    }
+
+    @Test
+    void bulkReadBytes_vs_individualReads() throws IOException {
+         /*
+            TEST RESULTS (iterations 50000):
+                num ITERATIONS individual reads: 414
+                num ITERATIONS bulk read: 71
+                read all lines index: 1
+
+            bulk reads are much faster. But reading all lines is even faster.
+         */
+
+
+        int ITERATIONS = 100000;
+
+        File directory = new File("one_rows");
+        directory.mkdirs();
+        byte[] file = new byte[ITERATIONS * 8];
+        FileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
+
+
+        long time = System.currentTimeMillis();
+        for (int i = 0; i < ITERATIONS; i++) {
+            byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index", i * 8, 8);
+        }
+        System.out.print("num ITERATIONS individual reads: ");
+        System.out.println(System.currentTimeMillis() - time);
+
+
+        List<Long> startBytes = new ArrayList<>();
+        List<Long> numBytes = new ArrayList<>();
+        for (int i = 0; i < ITERATIONS; i++) {
+            startBytes.add((long) (i * 8));
+            numBytes.add(8L);
+        }
+        time = System.currentTimeMillis();
+        List<Object> bytes = FileUtil.readBytes("one_rows/all_lines_index.index", startBytes, numBytes);
+        System.out.print("num ITERATIONS bulk read: ");
+        System.out.println(System.currentTimeMillis() - time);
+    }
+
+    @Test
+    void bulkReadBytes_vs_allBytes() throws IOException {
+         /*
+            TEST RESULTS:
+
+                (ITERATIONS 1000000, MULT 100, BULK_LINES 1000)
+                    num BULK_LINES bulk read: 140
+                    read all lines index: 198
+
+                (ITERATIONS 1000, MULT 1000, BULK_LINES 1)
+                    num BULK_LINES bulk read: 11
+                    read all lines index: 13
+         */
+
+        int ITERATIONS = 1000;
+        int MULT = 1000;
+        int BULK_LINES = 1;
+
+        File directory = new File("one_rows");
+        directory.mkdirs();
+        FileUtil.deleteFile("one_rows/all_lines_index.index");
+        byte[] file = new byte[ITERATIONS * 8];
+        FileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
+
+
+        List<Long> startBytes = new ArrayList<>();
+        List<Long> numBytes = new ArrayList<>();
+        for (int i = 0; i < BULK_LINES; i++) {
+            startBytes.add((long) (i * 8));
+            numBytes.add(8L);
+        }
+        long time = System.currentTimeMillis();
+        for (int i = 0; i <MULT; i++) {
+            List<Object> bytes = FileUtil.readBytes("one_rows/all_lines_index.index", startBytes, numBytes);
+//            int size = bytes.stream()
+//                    .map( byteArr -> byteArr.length )
+//                    .reduce(0, Integer::sum);
+//            System.out.println(size);
+        }
+        System.out.print("num BULK_LINES bulk read: ");
+        System.out.println(System.currentTimeMillis() - time);
+
+
+        time = System.currentTimeMillis();
+        for (int i = 0; i <MULT; i++) {
+            byte[] allLines = FileUtil.readBytes("one_rows/all_lines_index.index");
+//            System.out.println(allLines.length);
+        }
+        System.out.print("read all lines index: ");
+        System.out.println(System.currentTimeMillis() - time);
+    }
+
+
+    @Test
+    void calculateRoute_vs_readRoutes() {
+        /*
+                Route bytes could be: (budget 8 - 12 bytes)
+                    - [8 bytes offset][4 bytes length]
+                    - [6 bytes offset][4 bytes length]
+
+
+
+         */
+
+
+        byte[] bytes = TypeToByteUtil.longToByteArray(25L);
+        long lVal = TypeToByteUtil.byteArrayToLong(bytes);
+        System.out.println(lVal);
+
+
+    }
 
 }

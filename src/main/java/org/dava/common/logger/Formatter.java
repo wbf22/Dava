@@ -3,7 +3,7 @@ package org.dava.common.logger;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 
-import static org.dava.common.ansi.AnsiColor.*;
+import static org.dava.common.logger.AnsiColor.*;
 
 public interface Formatter {
 

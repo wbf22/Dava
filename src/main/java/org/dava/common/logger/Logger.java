@@ -2,15 +2,13 @@ package org.dava.common.logger;
 
 
 
-import org.dava.common.ansi.AnsiColor;
-
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
-import static org.dava.common.ansi.AnsiColor.RESET;
+import static org.dava.common.logger.AnsiColor.RESET;
 
 public class Logger {
 

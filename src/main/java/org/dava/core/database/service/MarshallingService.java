@@ -1,5 +1,6 @@
 package org.dava.core.database.service;
 
+import org.dava.common.TypeUtil;
 import org.dava.core.database.objects.database.structure.Database;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.objects.database.structure.Row;
@@ -11,6 +12,7 @@ import java.time.temporal.Temporal;
 import java.util.*;
 
 import static org.dava.common.Checks.mapIfNotNull;
+import static org.dava.common.TypeUtil.isBasicJavaType;
 import static org.dava.core.database.objects.exception.ExceptionType.*;
 
 
@@ -65,7 +67,7 @@ public class MarshallingService {
 
             Object value = getFieldValueUsingGetter(row, field);
 
-            if (isBasicJavaType(value.getClass())) {
+            if (TypeUtil.isBasicJavaType(value.getClass())) {
                 columnsToValues.put(columnName, value.toString());
             }
             else {
@@ -119,18 +121,6 @@ public class MarshallingService {
 
 
 
-    private static boolean isBasicJavaType(Class<?> type) {
-        return isNumericClass(type) || Temporal.class.isAssignableFrom(type) || type == String.class;
-    }
-
-    private static boolean isNumericClass(Class<?> type) {
-        return Number.class.isAssignableFrom(type) || isPrimitiveNumericClass(type);
-    }
-
-    private static boolean isPrimitiveNumericClass(Class<?> type) {
-        return type == int.class || type == long.class || type == double.class
-            || type == float.class || type == short.class || type == byte.class;
-    }
 
 
 }

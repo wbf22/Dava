@@ -1,8 +1,9 @@
 package org.dava.common.ansi;
 
+import org.dava.common.logger.AnsiColor;
 import org.junit.jupiter.api.Test;
 
-import static org.dava.common.ansi.AnsiColor.*;
+import static org.dava.common.logger.AnsiColor.*;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AnsiColorTest {
@@ -13,7 +14,7 @@ class AnsiColorTest {
         for (int code = 30; code < 200; code++ ) {
             for (int style = 0; style < 10; style++ ) {
                 System.out.println(
-                        AnsiColor.build(code, style) + code + ":" + style + RESET
+                    AnsiColor.build(code, style) + code + ":" + style + RESET
                 );
             }
         }

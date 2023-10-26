@@ -36,12 +36,14 @@ class OperationServiceTest {
     static Database database;
     static int ITERATIONS = 1000;
     static Level logLevel = Level.DEBUG;
+//    static String DB_ROOT = "/Users/brandon.fowler/Desktop/db";
+    static String DB_ROOT = "db";
     private static final Logger log = Logger.getLogger(OperationServiceTest.class.getName());
 
 
     static void setUpWipeAndPopulate() throws IOException {
-        if (FileUtil.exists("db/Order")) {
-            FileUtil.deleteDirectory("db/Order");
+        if (FileUtil.exists(DB_ROOT + "/Order")) {
+            FileUtil.deleteDirectory(DB_ROOT + "/Order");
         }
 
         setUpUseExisting();
@@ -74,13 +76,14 @@ class OperationServiceTest {
     }
 
     static void setUpUseExisting() {
-        database = new Database("db", List.of(Order.class));
+        database = new Database(DB_ROOT, List.of(Order.class));
     }
 
     @BeforeAll
     static void setUp() throws IOException {
         Logger.setApplicationLogLevel(logLevel);
         setUpWipeAndPopulate();
+//        setUpUseExisting();
     }
 
 
@@ -89,11 +92,13 @@ class OperationServiceTest {
         //   181,801 / 293,141 = 62% data, 28% meta
         //   193,031 / 254,167 = 76% data, 24% meta (with large text column)
 
+        int INSERT_ITERATIONS = 1000;
+
         Random random = new Random();
 
         Timer timer = Timer.start();
         String tableName = "";
-        for (int i = 0; i < ITERATIONS; i++) {
+        for (int i = 0; i < INSERT_ITERATIONS; i++) {
             Order orderTable = new Order(
                 UUID.randomUUID().toString(),
                 "This is a long description. A lot of tables could have something like this so this will be a good test to include this.",
@@ -103,13 +108,16 @@ class OperationServiceTest {
             Row row = MarshallingService.parseRow(orderTable).get(0);
             tableName = row.getTableName();
             BaseOperationService.insert(row, database, database.getTableByName(tableName), true);
+            if (i > 10000 && i % 10000 == 0) {
+                log.print(i + "/" + INSERT_ITERATIONS);
+            }
         }
         timer.printRestart();
 
         Table<?> table = database.getTableByName(tableName);
         long size = table.getSize(table.getRandomPartition());
 
-        assertEquals(2 * ITERATIONS, size - 1);
+        assertEquals(INSERT_ITERATIONS + ITERATIONS, size - 1);
     }
 
     @Test
@@ -120,9 +128,12 @@ class OperationServiceTest {
         List<Row> rows = equals.retrieve(database, new ArrayList<>(), "Order", 10L, null);
         timer.printRestart();
 
-        rows.forEach( row ->
-            assertEquals("25", row.getValue("total"))
-        );
+        rows.forEach( row -> {
+            log.debug(
+                Row.serialize(database.getTableByName(row.getTableName()), row.getColumnsToValues())
+            );
+            assertEquals("25", row.getValue("total"));
+        });
         assertTrue(rows.size() <= 10L);
     }
 
@@ -138,6 +149,9 @@ class OperationServiceTest {
         timer.printRestart();
 
         rows.forEach( row -> {
+            log.debug(
+                Row.serialize(database.getTableByName(row.getTableName()), row.getColumnsToValues())
+            );
             assertEquals("25", row.getValue("total"));
             assertEquals("1", row.getValue("discount"));
         });
@@ -160,6 +174,8 @@ class OperationServiceTest {
         List<Row> rows = after.retrieve(database, new ArrayList<>(), "Order", 10L, offset);
         timer.printRestart();
 
+        log.debug(date.toString());
+        log.space();
         StreamUtil.enumerate(rows, (i, row) -> {
             log.debug( 1 + offset + i + " " + row.getValue("time") );
         });
@@ -170,7 +186,6 @@ class OperationServiceTest {
             );
         });
     }
-
 
     @Test
     void before() throws IOException {
@@ -228,6 +243,18 @@ class OperationServiceTest {
         log.debug("Same but min time zone: " + notYetNewYear);
         log.debug("Converted back: " + notYetNewYear.withZoneSameInstant(ZoneOffset.MAX));
 
+
+        BigDecimal bdI = new BigDecimal( Integer.parseInt("0") );
+        BigDecimal bdL = new BigDecimal( Long.parseLong("0") );
+        BigDecimal bdD = new BigDecimal( Double.parseDouble("0.31") );
+        BigDecimal bdD2 = BigDecimal.valueOf( Double.parseDouble("0.31") );
+        BigDecimal bdF = new BigDecimal( Float.parseFloat("48984.2354") );
+
+        log.debug(bdI.toString());
+        log.debug(bdL.toString());
+        log.debug(bdD.toString());
+        log.debug(bdD2.toString());
+        log.debug(bdF.toString());
 
     }
 

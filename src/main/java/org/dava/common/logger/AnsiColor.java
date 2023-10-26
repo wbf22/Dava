@@ -1,4 +1,4 @@
-package org.dava.common.ansi;
+package org.dava.common.logger;
 
 import java.util.regex.Pattern;
 

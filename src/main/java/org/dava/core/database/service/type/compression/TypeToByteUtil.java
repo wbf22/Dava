@@ -1,7 +1,5 @@
 package org.dava.core.database.service.type.compression;
 
-import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 public class TypeToByteUtil {

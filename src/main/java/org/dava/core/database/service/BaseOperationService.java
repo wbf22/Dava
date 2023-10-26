@@ -1,6 +1,8 @@
 package org.dava.core.database.service;
 
 
+import org.dava.common.ArrayUtil;
+import org.dava.common.TypeUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
@@ -9,20 +11,25 @@ import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
 import java.io.File;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.function.BiPredicate;
-import java.util.function.Function;
+import java.util.stream.IntStream;
+import java.util.stream.LongStream;
+import java.util.stream.Stream;
 
 import static org.dava.common.Checks.safeCast;
 import static org.dava.core.database.objects.exception.ExceptionType.BASE_IO_ERROR;
+import static org.dava.core.database.objects.exception.ExceptionType.INDEX_CREATION_ERROR;
 
 /**
  * Class for actually modifying database files.
  */
 public class BaseOperationService {
 
+    private static int NUMERIC_PARTITION_SIZE = 1000000;
 
 
 
@@ -35,15 +42,15 @@ public class BaseOperationService {
         byte[] bytes = rowString.getBytes(StandardCharsets.UTF_8);
 
         // get random empty row or use last row in the table
-        Long destinationRow = table.getEmptyRow(partition);
-        destinationRow = (destinationRow == null || bytes.length > table.getRowLength(destinationRow, partition))?
-            table.getSize(partition) : destinationRow;
-
-        IndexRoute route = IndexRoute.of(partition, destinationRow, table);
-        if (bytes.length < route.getLengthInTable()) {
-            rowString = rowString.substring(0, rowString.length()-1) + " ".repeat(route.getLengthInTable() - bytes.length) + "\n";
+        IndexRoute route = table.getEmptyRow(partition);
+        if (route == null || bytes.length > route.getLengthInTable()) {
+            Long tableSize = FileUtil.fileSize(table.getTablePath(partition) + ".csv");
+            route = new IndexRoute(
+                partition,
+                tableSize,
+                bytes.length
+            );
         }
-        bytes = rowString.getBytes(StandardCharsets.UTF_8);
 
         // add to table
         String path = table.getTablePath(route.getPartition()) + ".csv";
@@ -61,15 +68,12 @@ public class BaseOperationService {
             );
         }
 
-        // update table row lengths if needed
-        table.addRowLengthIfNeeded(bytes.length, destinationRow, partition);
-
         // update table row count in empties
         Long newSize = table.getSize(route.getPartition()) + 1;
         table.setSize(route.getPartition(), newSize);
 
         if (index) {
-            // add to index csv
+            // add to indices
             for (Map.Entry<String, Object> columnValue : row.getColumnsToValues().entrySet()) {
                 String folderPath = Index.buildIndexRootPath(
                     database.getRootDirectory(),
@@ -79,14 +83,25 @@ public class BaseOperationService {
                     columnValue.getValue()
                 );
 
+                Column<?> column = table.getColumn(columnValue.getKey());
                 Object value = columnValue.getValue();
-                if (Date.isDateSupportedDateType( table.getColumn(columnValue.getKey()).getType() )) {
+                if (Date.isDateSupportedDateType( column.getType() )) {
                     value = Date.of(
                         value.toString(),
                         table.getColumn(columnValue.getKey()).getType()
                     ).getDateWithoutTime().toString();
+                    addToIndex(folderPath, value, route);
                 }
-                addToIndex(folderPath, value, destinationRow);
+                else if ( TypeUtil.isNumericClass(column.getType()) ) {
+                    if (!FileUtil.exists(folderPath + "/" + value + ".index")) {
+                        updateNumericCountFile(folderPath);
+                    }
+                    addToIndex(folderPath, value, route);
+                    repartitionIfNeeded(folderPath);
+                }
+                else {
+                    addToIndex(folderPath, value, route);
+                }
             }
         }
 
@@ -94,18 +109,18 @@ public class BaseOperationService {
         return true;
     }
 
-    public <T> boolean update(Row row, IndexRoute primaryKeyRoute, Table<T> table) {
+    public static boolean update(Row row, IndexRoute primaryKeyRoute, Table<?> table) {
+        // delete row and indices.
 
-//        BigInteger rowOffset = calculateStartOfRow(primaryKeyRoute.getRow(), table);
-//        try {
-//            FileUtil.writeFile(
-//                table.getTablePath(primaryKeyRoute),
-//                rowOffset.longValue(),
-//                ""
-//            );
-//        } catch (IOException e) {
-//            throw new RuntimeException(e);
-//        }
+        // insert row again
+
+        return true;
+    }
+
+    public static boolean delete(Row row, IndexRoute primaryKeyRoute, Table<?> table) {
+        // delete row and indices.
+
+        // insert row again
 
         return true;
     }
@@ -115,56 +130,79 @@ public class BaseOperationService {
     /*
         Indices
      */
+
+    public static void addToIndex(String folderPath, Object value, IndexRoute route) {
+        try {
+            // make index file if it doesn't exist
+            if (!FileUtil.exists(folderPath)) {
+                FileUtil.createDirectoriesIfNotExist(folderPath);
+            }
+
+            // increment index count
+            String path = folderPath + "/" + value + ".index";
+            long count = 0L;
+            if (FileUtil.exists(path)) {
+                count = getCountForIndexPath(path);
+            }
+            count++;
+            writeCountForIndexPath(path, count);
+
+            // write new row in index
+            FileUtil.writeBytesAppend(
+                folderPath + "/" + value + ".index",
+                route.getRouteAsBytes()
+            );
+
+        } catch (IOException e) {
+            throw new DavaException(
+                BASE_IO_ERROR,
+                "Error writing row index to: " + folderPath,
+                e
+            );
+        }
+    }
+
     public static List<Row> getAllRowsFromIndex(String indexPath, String partition, Database database, String tableName) {
         Table<?> table = database.getTableByName(tableName);
 
-        long[] lines = getLongs(
+        List<IndexRoute> lines = getRoutes(
                 indexPath,
-                true,
-                null,
+                partition,
+                8L,
                 null
         );
-        long[] countRemoved = Arrays.copyOfRange(lines, 1, lines.length);
 
-        return Arrays.stream(countRemoved).sequential()
-                .mapToObj(line -> getLineFromPartition(partition, table, line))
-                .map(line -> new Row(line, table))
-                .toList();
+        return getLinesFromPartition( partition, table, lines )
+            .map(line -> new Row(line, table))
+            .toList();
     }
 
     /**
-     * Gets rows from the table from start to end row. If the table has multiple partitions
-     * the rows be stored returned starting from the first partition to the last.
+     * Gets rows from the table from start to end row.
      *
-     * @return a list of rows of size 0 - (endRow - startRow)
+     * @return a list of rows of size 0 to (endRow - startRow)
      */
     public static List<Row> getRowsFromIndex(Database database, String tableName, String columnName, String value, long startRow, long endRow) {
         Table<?> table = database.getTableByName(tableName);
 
-        List<Row> rows = new ArrayList<>();
-        for(int i = 0; i < table.getPartitions().size(); i++) {
-            String partition = table.getPartitions().get(i);
-            String path = Index.buildIndexPath(database.getRootDirectory(), tableName, partition, table.getColumn(columnName), value);
+        int partitionQuerySize = (int) (1.1 * (endRow - startRow)/table.getPartitions().size());
+        int adjustedSize = (partitionQuerySize == 0)? 1 : partitionQuerySize;
 
-            long[] lines = getLongs(
+        return table.getPartitions().parallelStream()
+            .flatMap(partition -> {
+                String path = Index.buildIndexPath(database.getRootDirectory(), tableName, partition, table.getColumn(columnName), value);
+
+                List<IndexRoute> lines = getRoutes(
                     path,
-                    false,
-                    8 + startRow * 8,
-                    (int) ((endRow - startRow) * 8)
-            );
+                    partition,
+                    8 + startRow * 10,
+                    adjustedSize * 10
+                );
 
-            rows.addAll(
-                Arrays.stream(lines).sequential()
-                    .mapToObj(line -> getLineFromPartition(partition, table, line))
-                    .map(line -> new Row(line, table))
-                    .toList()
-            );
-
-            if (rows.size() >= endRow - startRow)
-                return rows;
-
-        }
-        return rows;
+                return getLinesFromPartition(partition, table, lines)
+                    .map(line -> new Row(line, table));
+            })
+            .toList();
     }
 
     /**
@@ -194,7 +232,7 @@ public class BaseOperationService {
                         rows.addAll(
                             Arrays.stream(FileUtil.listFiles(
                                 Index.buildIndexYearFolderForDate(database.getRootDirectory(), tableName, partition, columnName, Integer.toString(folderYear))
-                            )).sequential()
+                            ))
                             .flatMap( indexFile -> getAllRowsFromIndex( indexFile.getPath(), partition, database, tableName ).stream() )
                             .toList()
                         );
@@ -203,7 +241,7 @@ public class BaseOperationService {
                         rows.addAll(
                             Arrays.stream(FileUtil.listFiles(
                                 Index.buildIndexYearFolderForDate(database.getRootDirectory(), tableName, partition, columnName, Integer.toString(folderYear))
-                            )).sequential()
+                            ))
                             .flatMap( localDateIndexFile -> {
                                 Date<?> indexLocateDate = Date.of(localDateIndexFile.getName().split("\\.")[0], column.getType());
 
@@ -268,13 +306,12 @@ public class BaseOperationService {
     ) {
 
         Table<?> table = database.getTableByName(tableName);
-        Column<?> column = table.getColumn(columnName);
 
         // all year folders within partitions, filtered by after date, sorted descending or ascending
         List<Integer> yearDatesFolders = table.getPartitions().stream()
             .flatMap(partition -> {
                 String columnPath = Index.buildColumnPath(database.getRootDirectory(), tableName, partition, columnName);
-                return Arrays.stream(FileUtil.listFiles(columnPath)).sequential()
+                return Arrays.stream(FileUtil.listFiles(columnPath))
                     .map(yearFolder -> Integer.parseInt(yearFolder.getName().split("\\.")[0]))
                     .filter(fYear -> compareYearsFolderYearDateYear.test(fYear, date.getYear()))
                     .sorted(
@@ -301,7 +338,7 @@ public class BaseOperationService {
             List<LocalDate> indicesForLocalDates = table.getPartitions().stream()
                     .flatMap(partition -> {
                         String yearPath = Index.buildIndexYearFolderForDate(database.getRootDirectory(), tableName, partition, columnName, year.toString());
-                        return Arrays.stream(FileUtil.listFiles(yearPath)).sequential()
+                        return Arrays.stream(FileUtil.listFiles(yearPath))
                                 .map( indexFile -> LocalDate.parse(indexFile.getName().split("\\.")[0]) );
                     })
 
@@ -374,27 +411,25 @@ public class BaseOperationService {
     }
 
     /**
-     * Gets longs from a file from startByte to numBytes or the end of the file (whichever comes first).
-     * If allLines is true then startByte and numBytes are ignored and
+     * Gets IndexRoutes from a file from startByte to numBytes or the end of the file (whichever comes first).
+     * If allLines is true then startByte and numBytes are ignored
      */
-    private static long[] getLongs(String filePath, boolean allLines, Long startByte, Integer numBytes) {
+    private static List<IndexRoute> getRoutes(String filePath, String partition, Long startByte, Integer numBytes) {
         try {
 
             byte[] bytes;
-            if (allLines) {
-                bytes = FileUtil.readBytes(filePath);
-            }
-            else {
-                long fileSize = FileUtil.fileSize(filePath);
-                numBytes = Math.toIntExact(
-                    (fileSize < numBytes + startByte) ? fileSize - startByte : numBytes
-                );
-                bytes = FileUtil.readBytes(filePath, startByte, numBytes);
-            }
+            long fileSize = FileUtil.fileSize(filePath);
+            numBytes = Math.toIntExact(
+                (numBytes == null || fileSize < numBytes + startByte) ? fileSize - startByte : numBytes
+            );
+            bytes = (startByte > fileSize)? null : FileUtil.readBytes(filePath, startByte, numBytes);
             if (bytes == null)
-                return new long[0];
+                return new ArrayList<>();
 
-            return TypeToByteUtil.byteArrayToLongArray(bytes);
+            return IndexRoute.parseBytes(
+                bytes,
+                partition
+            );
         } catch (IOException e) {
             throw new DavaException(
                 BASE_IO_ERROR,
@@ -404,15 +439,21 @@ public class BaseOperationService {
         }
     }
 
-    public static String getLineFromPartition(String partition, Table<?> table, long indexRow) {
+    public static Stream<String> getLinesFromPartition(String partition, Table<?> table, List<IndexRoute> rows) {
 
-        IndexRoute entry = IndexRoute.of(partition, indexRow, table);
         try {
-            return FileUtil.readFile(
-                table.getTablePath(entry.getPartition()) + ".csv",
-                entry.getOffsetInTable(),
-                entry.getLengthInTable()
-            );
+            return FileUtil.readBytes(
+                table.getTablePath(partition) + ".csv",
+                rows.stream()
+                    .map(IndexRoute::getOffsetInTable)
+                    .toList(),
+                rows.stream()
+                    .map(IndexRoute::getLengthInTable)
+                    .map(i -> (long) i)
+                    .toList()
+            )
+            .stream()
+            .map(bytes -> new String((byte[]) bytes, StandardCharsets.UTF_8) );
         } catch (IOException e) {
             throw new DavaException(
                 BASE_IO_ERROR,
@@ -420,6 +461,7 @@ public class BaseOperationService {
                 e
             );
         }
+
     }
 
     public static Long getCountForIndexPath(String path) {
@@ -456,47 +498,99 @@ public class BaseOperationService {
 
     }
 
-    public static void addToIndex(String folderPath, Object value, long rowNumber) {
+    private static void updateNumericCountFile(String folderPath) {
+        String countFile = folderPath + "/c.count";
         try {
-            // make index file if it doesn't exist
-            if (!FileUtil.exists(folderPath)) {
-                FileUtil.createDirectoriesIfNotExist(folderPath);
+            FileUtil.createDirectoriesIfNotExist(folderPath);
+
+            if (!FileUtil.exists(countFile)) {
+                FileUtil.createFile(countFile, TypeToByteUtil.longToByteArray(0L) );
             }
 
-            // increment index count
-            String path = folderPath + "/" + value + ".index";
-            long count = 0L;
-            if (FileUtil.exists(path)) {
-                count = getCountForIndexPath(path);
-            }
+            long count = getNumericCount(countFile);
             count++;
-            writeCountForIndexPath(path, count);
-
-            // write new row in index
-            FileUtil.writeBytesAppend(
-                folderPath + "/" + value + ".index",
-                TypeToByteUtil.longToByteArray(rowNumber)
-            );
+            FileUtil.writeBytes(countFile, 0, TypeToByteUtil.longToByteArray(count) );
 
         } catch (IOException e) {
-            throw new DavaException(
-                BASE_IO_ERROR,
-                "Error writing row index to: " + folderPath,
-                e
-            );
+            throw new DavaException(INDEX_CREATION_ERROR, "Error updating count for numeric index partition: " + countFile, e);
+        }
+
+    }
+
+    private static void repartitionIfNeeded(String folderPath) {
+        try {
+            String countFile = folderPath + "/c.count";
+
+            long count = getNumericCount(countFile);
+
+            if (count > NUMERIC_PARTITION_SIZE) {
+                File[] files = FileUtil.listFiles(folderPath);
+
+                int step = files.length / 5;
+                List<BigDecimal> samples = IntStream.range(0, 5)
+                    .mapToObj(i ->
+                          (files[i * step].getName().contains(".index")) ? new BigDecimal(files[i * step].getName().split("\\.")[0]) : BigDecimal.ZERO
+                    )
+                    .sorted(BigDecimal::compareTo)
+                    .toList();
+                BigDecimal median = samples.get(2);
+
+                FileUtil.createDirectoriesIfNotExist(folderPath + "/-" + median);
+                FileUtil.createDirectoriesIfNotExist(folderPath + "/+" + median);
+
+                List<File> lessThan = new ArrayList<>();
+                List<File> greaterThanOrEqual = new ArrayList<>();
+                Arrays.stream(files).forEach( file -> {
+                    String fileName = file.getName();
+                    if (fileName.contains(".index")) {
+                        if ( new BigDecimal(fileName.split("\\.")[0]).compareTo(median) < 0 ) {
+                            lessThan.add(file);
+                        }
+                        else {
+                            greaterThanOrEqual.add(file);
+                        }
+                    }
+                });
+
+                FileUtil.moveFilesToDirectory(lessThan, folderPath + "/-" + median);
+                FileUtil.moveFilesToDirectory(greaterThanOrEqual, folderPath + "/+" + median);
+
+                FileUtil.createFile(folderPath + "/-" + median + "/c.count", TypeToByteUtil.longToByteArray(lessThan.size()) );
+                FileUtil.createFile(folderPath + "/+" + median + "/c.count", TypeToByteUtil.longToByteArray(greaterThanOrEqual.size()) );
+
+                FileUtil.deleteFile(countFile);
+
+            }
+        } catch (IOException e) {
+            throw new DavaException(INDEX_CREATION_ERROR, "Repartition of numerical index failed: " + folderPath, e);
         }
     }
 
+
+    private static long getNumericCount(String countFile) throws IOException {
+        byte[] countBytes = FileUtil.readBytes(countFile, 0, 8);
+        return (countBytes == null)? 0L :
+            TypeToByteUtil.byteArrayToLong(
+                countBytes
+            );
+    }
 
 
     /*
         Table meta data
      */
-    public static Long popLong(String filePath, long headerSize, Random random) {
+    public static IndexRoute popEmpty(String filePath, long headerSize, Random random) {
         if (FileUtil.fileSize(filePath) - headerSize >= 8) {
             try {
-                return TypeToByteUtil.byteArrayToLong(
-                    FileUtil.popRandomBytes(filePath, 8, random)
+                byte[] bytes = FileUtil.popRandomBytes(filePath, 8,10, random);
+                return new IndexRoute(
+                    null,
+                    TypeToByteUtil.byteArrayToLong(
+                        ArrayUtil.subRange(bytes, 0, 6)
+                    ),
+                    (int) TypeToByteUtil.byteArrayToLong(
+                        ArrayUtil.subRange(bytes, 6, 10)
+                    )
                 );
             } catch (IOException e) {
                 throw new DavaException(
