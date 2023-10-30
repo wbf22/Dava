@@ -14,4 +14,5 @@
 - Implement Rollback operations
 - Flyway type startup option
 - Handle commas in text columns
+- Handle edge cases near max table size
 

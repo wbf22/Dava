@@ -2,11 +2,13 @@ package org.dava.core.database.service;
 
 
 import org.dava.common.ArrayUtil;
-import org.dava.common.TypeUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
+import org.dava.core.database.service.objects.EmptiesPackage;
+import org.dava.core.database.service.objects.Empty;
+import org.dava.core.database.service.objects.IORunnable;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
 import java.io.File;
@@ -17,7 +19,6 @@ import java.time.LocalDate;
 import java.util.*;
 import java.util.function.BiPredicate;
 import java.util.stream.IntStream;
-import java.util.stream.LongStream;
 import java.util.stream.Stream;
 
 import static org.dava.common.Checks.safeCast;
@@ -33,81 +34,6 @@ public class BaseOperationService {
 
 
 
-    public static boolean insert(Row row, Database database, Table<?> table, boolean index) {
-        // TODO collect data to perform rollback if necessary
-
-        // serialize row
-        String partition = table.getRandomPartition();
-        String rowString = Row.serialize(table, row.getColumnsToValues()) + "\n";
-        byte[] bytes = rowString.getBytes(StandardCharsets.UTF_8);
-
-        // get random empty row or use last row in the table
-        IndexRoute route = table.getEmptyRow(partition);
-        if (route == null || bytes.length > route.getLengthInTable()) {
-            Long tableSize = FileUtil.fileSize(table.getTablePath(partition) + ".csv");
-            route = new IndexRoute(
-                partition,
-                tableSize,
-                bytes.length
-            );
-        }
-
-        // add to table
-        String path = table.getTablePath(route.getPartition()) + ".csv";
-        try {
-            FileUtil.writeBytes(
-                path,
-                route.getOffsetInTable(),
-                bytes
-            );
-        } catch (IOException e) {
-            throw new DavaException(
-                BASE_IO_ERROR,
-                "Error writing row to: " + path,
-                e
-            );
-        }
-
-        // update table row count in empties
-        Long newSize = table.getSize(route.getPartition()) + 1;
-        table.setSize(route.getPartition(), newSize);
-
-        if (index) {
-            // add to indices
-            for (Map.Entry<String, Object> columnValue : row.getColumnsToValues().entrySet()) {
-                String folderPath = Index.buildIndexRootPath(
-                    database.getRootDirectory(),
-                    table.getTableName(),
-                    route.getPartition(),
-                    table.getColumn(columnValue.getKey()),
-                    columnValue.getValue()
-                );
-
-                Column<?> column = table.getColumn(columnValue.getKey());
-                Object value = columnValue.getValue();
-                if (Date.isDateSupportedDateType( column.getType() )) {
-                    value = Date.of(
-                        value.toString(),
-                        table.getColumn(columnValue.getKey()).getType()
-                    ).getDateWithoutTime().toString();
-                    addToIndex(folderPath, value, route);
-                }
-                else if ( TypeUtil.isNumericClass(column.getType()) ) {
-                    if (!FileUtil.exists(folderPath + "/" + value + ".index")) {
-                        updateNumericCountFile(folderPath);
-                    }
-                    addToIndex(folderPath, value, route);
-                    repartitionIfNeeded(folderPath);
-                }
-                else {
-                    addToIndex(folderPath, value, route);
-                }
-            }
-        }
-
-
-        return true;
-    }
 
     public static boolean update(Row row, IndexRoute primaryKeyRoute, Table<?> table) {
         // delete row and indices.
@@ -125,33 +51,73 @@ public class BaseOperationService {
         return true;
     }
 
+    public static void performOperation(IORunnable operation, String rollbackData, String rollbackPath) throws IOException {
+
+        // write the rollback information (so it can be rolled back if this or later calls fail)
+        FileUtil.writeBytesAppend(rollbackPath, rollbackData.getBytes());
+
+        // run the write operation
+        operation.run();
+    }
 
 
     /*
         Indices
      */
-
-    public static void addToIndex(String folderPath, Object value, IndexRoute route) {
+    public static void addToIndex(String folderPath, Object value, List<IndexRoute> routes, String rollbackPath) {
         try {
             // make index file if it doesn't exist
             if (!FileUtil.exists(folderPath)) {
                 FileUtil.createDirectoriesIfNotExist(folderPath);
             }
 
-            // increment index count
+            // TODO use empties rows for index as well
+            // increment index count and write new routes in index
             String path = folderPath + "/" + value + ".index";
             long count = 0L;
             if (FileUtil.exists(path)) {
                 count = getCountForIndexPath(path);
             }
-            count++;
-            writeCountForIndexPath(path, count);
+            byte[] routeBytes = new byte[routes.size() * 10];
+            IntStream.range(0, routes.size())
+                    .forEach( i -> {
+                        int index = i * 10;
+                        byte[] bytes = routes.get(i).getRouteAsBytes();
+                        System.arraycopy(bytes, 0, routeBytes, index, 10);
+                    });
 
-            // write new row in index
-            FileUtil.writeBytesAppend(
-                folderPath + "/" + value + ".index",
-                route.getRouteAsBytes()
+
+            long finalCount = count;
+            StringBuilder rollback = new StringBuilder();
+            rollback.append("IC:")
+                .append(path)
+                .append(":")
+                .append(count)
+                .append(":")
+                .append(count)
+                .append(routes.size())
+                .append("\n");
+            routes.forEach( route ->
+                rollback.append("I:")
+                    .append(route.getOffsetInTable())
+                    .append(":")
+                    .append(route.getLengthInTable())
             );
+
+            performOperation(
+                () -> {
+                    writeCountForIndexPath(path, finalCount + routes.size());
+                    FileUtil.writeBytesAppend(
+                        folderPath + "/" + value + ".index",
+                        routeBytes
+                    );
+                },
+                rollback.toString(),
+                rollbackPath
+            );
+
+
+
 
         } catch (IOException e) {
             throw new DavaException(
@@ -414,7 +380,7 @@ public class BaseOperationService {
      * Gets IndexRoutes from a file from startByte to numBytes or the end of the file (whichever comes first).
      * If allLines is true then startByte and numBytes are ignored
      */
-    private static List<IndexRoute> getRoutes(String filePath, String partition, Long startByte, Integer numBytes) {
+    public static List<IndexRoute> getRoutes(String filePath, String partition, Long startByte, Integer numBytes) {
         try {
 
             byte[] bytes;
@@ -488,6 +454,7 @@ public class BaseOperationService {
                     count
                 )
             );
+
         } catch (IOException e) {
             throw new DavaException(
                 BASE_IO_ERROR,
@@ -498,7 +465,7 @@ public class BaseOperationService {
 
     }
 
-    private static void updateNumericCountFile(String folderPath) {
+    public static void updateNumericCountFile(String folderPath) {
         String countFile = folderPath + "/c.count";
         try {
             FileUtil.createDirectoriesIfNotExist(folderPath);
@@ -517,13 +484,14 @@ public class BaseOperationService {
 
     }
 
-    private static void repartitionIfNeeded(String folderPath) {
+    public static void repartitionIfNeeded(String folderPath, String rollbackPath) {
         try {
             String countFile = folderPath + "/c.count";
 
             long count = getNumericCount(countFile);
 
             if (count > NUMERIC_PARTITION_SIZE) {
+
                 File[] files = FileUtil.listFiles(folderPath);
 
                 int step = files.length / 5;
@@ -535,37 +503,41 @@ public class BaseOperationService {
                     .toList();
                 BigDecimal median = samples.get(2);
 
-                FileUtil.createDirectoriesIfNotExist(folderPath + "/-" + median);
-                FileUtil.createDirectoriesIfNotExist(folderPath + "/+" + median);
+                performOperation(
+                    () -> {
+                        FileUtil.createDirectoriesIfNotExist(folderPath + "/-" + median);
+                        FileUtil.createDirectoriesIfNotExist(folderPath + "/+" + median);
 
-                List<File> lessThan = new ArrayList<>();
-                List<File> greaterThanOrEqual = new ArrayList<>();
-                Arrays.stream(files).forEach( file -> {
-                    String fileName = file.getName();
-                    if (fileName.contains(".index")) {
-                        if ( new BigDecimal(fileName.split("\\.")[0]).compareTo(median) < 0 ) {
-                            lessThan.add(file);
-                        }
-                        else {
-                            greaterThanOrEqual.add(file);
-                        }
-                    }
-                });
+                        List<File> lessThan = new ArrayList<>();
+                        List<File> greaterThanOrEqual = new ArrayList<>();
+                        Arrays.stream(files).forEach( file -> {
+                            String fileName = file.getName();
+                            if (fileName.contains(".index")) {
+                                if ( new BigDecimal(fileName.split("\\.")[0]).compareTo(median) < 0 ) {
+                                    lessThan.add(file);
+                                }
+                                else {
+                                    greaterThanOrEqual.add(file);
+                                }
+                            }
+                        });
 
-                FileUtil.moveFilesToDirectory(lessThan, folderPath + "/-" + median);
-                FileUtil.moveFilesToDirectory(greaterThanOrEqual, folderPath + "/+" + median);
+                        FileUtil.moveFilesToDirectory(lessThan, folderPath + "/-" + median);
+                        FileUtil.moveFilesToDirectory(greaterThanOrEqual, folderPath + "/+" + median);
 
-                FileUtil.createFile(folderPath + "/-" + median + "/c.count", TypeToByteUtil.longToByteArray(lessThan.size()) );
-                FileUtil.createFile(folderPath + "/+" + median + "/c.count", TypeToByteUtil.longToByteArray(greaterThanOrEqual.size()) );
+                        FileUtil.createFile(folderPath + "/-" + median + "/c.count", TypeToByteUtil.longToByteArray(lessThan.size()) );
+                        FileUtil.createFile(folderPath + "/+" + median + "/c.count", TypeToByteUtil.longToByteArray(greaterThanOrEqual.size()) );
 
-                FileUtil.deleteFile(countFile);
-
+                        FileUtil.deleteFile(countFile);
+                    },
+                    "P:" + folderPath + "/-" + median,
+                    rollbackPath
+                );
             }
         } catch (IOException e) {
             throw new DavaException(INDEX_CREATION_ERROR, "Repartition of numerical index failed: " + folderPath, e);
         }
     }
-
 
     private static long getNumericCount(String countFile) throws IOException {
         byte[] countBytes = FileUtil.readBytes(countFile, 0, 8);
@@ -576,35 +548,103 @@ public class BaseOperationService {
     }
 
 
+
+
     /*
         Table meta data
      */
-    public static IndexRoute popEmpty(String filePath, long headerSize, Random random) {
-        if (FileUtil.fileSize(filePath) - headerSize >= 8) {
-            try {
-                byte[] bytes = FileUtil.popRandomBytes(filePath, 8,10, random);
-                return new IndexRoute(
-                    null,
-                    TypeToByteUtil.byteArrayToLong(
-                        ArrayUtil.subRange(bytes, 0, 6)
-                    ),
-                    (int) TypeToByteUtil.byteArrayToLong(
-                        ArrayUtil.subRange(bytes, 6, 10)
-                    )
-                );
-            } catch (IOException e) {
-                throw new DavaException(
-                    BASE_IO_ERROR,
-                    "Error getting empty row for insert from table meta file: " + filePath,
-                    e
-                );
-            }
-        }
-        else {
-             return null;
+
+    public static void popRoutes(String rollbackPath, String emptiesFile, List<Empty> emptiesPackages) throws IOException {
+
+        if (emptiesPackages.isEmpty())
+            return;
+
+
+        StringBuilder rollbackString = new StringBuilder();
+        emptiesPackages.forEach( emptiesPackage ->
+            rollbackString.append("E:")
+                .append(emptiesPackage.getStartByte())
+                .append(",")
+                .append(emptiesPackage.getRoute().getOffsetInTable())
+                .append(",")
+                .append(emptiesPackage.getRoute().getLengthInTable())
+                .append("\n")
+        );
+
+        List<Long> startBytes = emptiesPackages.stream()
+            .map(Empty::getStartByte)
+            .toList();
+
+
+        BaseOperationService.performOperation(
+            () -> FileUtil.popBytes(emptiesFile, 10, startBytes),
+            rollbackString.toString(),
+            rollbackPath
+        );
+    }
+
+    /**
+     * get <= emptiesToGet routes and packages
+     *
+     * doesn't delete any routes, just retrieves
+     */
+    public static EmptiesPackage getEmpties(Integer emptiesToGet, String emptiesFile, Random random) throws IOException {
+
+        long fileSize = FileUtil.fileSize(emptiesFile);
+        if ( fileSize - 10 >= 8) {
+            return new EmptiesPackage();
         }
 
+        Set<Long> startBytes = new HashSet<>();
+
+        emptiesToGet = ( emptiesToGet == null || emptiesToGet > (fileSize -8) / 10 )? (int) (fileSize - 8) / 10 : emptiesToGet;
+
+        IntStream.range(0, emptiesToGet)
+            .forEach( i ->
+                startBytes.add(
+                    ( random.nextLong( 0, (fileSize -8) / 10 ) ) * 10 + 8
+                )
+            );
+
+        List<Long> numBytes = IntStream.range(0, startBytes.size())
+            .mapToObj( i -> 10L)
+            .toList();
+
+        List<Long> listStartBytes = new ArrayList<>(startBytes);
+
+        EmptiesPackage emptiesPackages = new EmptiesPackage();
+
+        // TODO assuming here that are startbytes are valid and will be returned.
+        List<Object> bytesArrays = FileUtil.readBytes(emptiesFile, startBytes.stream().toList(), numBytes)
+            .stream()
+            .toList();
+
+        IntStream.range(0, bytesArrays.size())
+            .forEach( i -> {
+                Object bytes = bytesArrays.get(i);
+                if (bytes != null) {
+                    byte[] casted = (byte[]) bytes;
+                    IndexRoute route = new IndexRoute(
+                        null,
+                        TypeToByteUtil.byteArrayToLong(
+                            ArrayUtil.subRange(casted, 0, 6)
+                        ),
+                        (int) TypeToByteUtil.byteArrayToLong(
+                            ArrayUtil.subRange(casted, 6, 10)
+                        )
+                    );
+                    emptiesPackages.addEmpty(
+                        new Empty(
+                            route,
+                            listStartBytes.get(i)
+                        )
+                    );
+                }
+            });
+
+        return emptiesPackages;
     }
+
 
     public static void writeLong(String filePath, long longToWrite) {
         try {

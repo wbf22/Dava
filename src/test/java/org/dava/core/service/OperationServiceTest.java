@@ -4,10 +4,12 @@ import org.dava.common.StreamUtil;
 import org.dava.common.logger.Level;
 import org.dava.common.logger.Logger;
 import org.dava.core.database.objects.database.structure.Database;
+import org.dava.core.database.objects.database.structure.IndexRoute;
 import org.dava.core.database.objects.database.structure.Row;
 import org.dava.core.database.objects.database.structure.Table;
 import org.dava.core.database.objects.dates.OffsetDate;
 import org.dava.core.database.service.BaseOperationService;
+import org.dava.core.database.service.Insert;
 import org.dava.core.database.service.MarshallingService;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.sql.objects.conditions.After;
@@ -16,7 +18,6 @@ import org.dava.core.sql.objects.conditions.Equals;
 import org.dava.core.sql.objects.logic.operators.And;
 import org.dava.external.Order;
 import org.dava.common.Timer;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +25,8 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
-import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.dava.common.Checks.safeCast;
 import static org.dava.common.StreamUtil.enumerate;
@@ -41,15 +43,18 @@ class OperationServiceTest {
     private static final Logger log = Logger.getLogger(OperationServiceTest.class.getName());
 
 
-    static void setUpWipeAndPopulate() throws IOException {
+    static void setUpWipeAndPopulate(Long seed) throws IOException {
         if (FileUtil.exists(DB_ROOT + "/Order")) {
             FileUtil.deleteDirectory(DB_ROOT + "/Order");
         }
 
-        setUpUseExisting();
+        seed = (seed == null)? new Random().nextLong() : seed;
+
+        setUpUseExisting(seed);
 
         // make 1000 entries
-        Random random = new Random();
+        Random random = new Random(seed);
+
         String tableName = "";
         for (int i = 0; i < ITERATIONS; i++) {
             OffsetDateTime time = OffsetDateTime.now();
@@ -70,20 +75,22 @@ class OperationServiceTest {
             );
             Row row = MarshallingService.parseRow(orderTable).get(0);
             tableName = row.getTableName();
-            BaseOperationService.insert(row, database, database.getTableByName(tableName), true);
+            Insert.insert(List.of(row), database, database.getTableByName(tableName), true);
         }
 
+        log.info("Seed: " + seed);
+
     }
 
-    static void setUpUseExisting() {
-        database = new Database(DB_ROOT, List.of(Order.class));
+    static void setUpUseExisting(long seed) {
+        database = new Database(DB_ROOT, List.of(Order.class), seed);
     }
 
-    @BeforeAll
-    static void setUp() throws IOException {
+    @BeforeEach
+    void setUp() throws IOException {
         Logger.setApplicationLogLevel(logLevel);
-        setUpWipeAndPopulate();
-//        setUpUseExisting();
+        setUpWipeAndPopulate(-183502108378805369L);
+//        setUpUseExisting(0L);
     }
 
 
@@ -92,32 +99,59 @@ class OperationServiceTest {
         //   181,801 / 293,141 = 62% data, 28% meta
         //   193,031 / 254,167 = 76% data, 24% meta (with large text column)
 
+        // in attractions the asset table had about 4-14 ms per insert
+        // batch inserts are 14ms and don't increase much with a batch size <100
+        // so for we're close but a little faster. 1ms for insert! though rollback logs may cost more time
+
         int INSERT_ITERATIONS = 1000;
 
         Random random = new Random();
 
-        Timer timer = Timer.start();
         String tableName = "";
-        for (int i = 0; i < INSERT_ITERATIONS; i++) {
-            Order orderTable = new Order(
-                UUID.randomUUID().toString(),
-                "This is a long description. A lot of tables could have something like this so this will be a good test to include this.",
-                BigDecimal.valueOf(Math.abs(random.nextLong(0, 100))),
-                BigDecimal.valueOf(Math.abs(random.nextLong(0, 5))),
-                OffsetDateTime.now());
-            Row row = MarshallingService.parseRow(orderTable).get(0);
-            tableName = row.getTableName();
-            BaseOperationService.insert(row, database, database.getTableByName(tableName), true);
-            if (i > 10000 && i % 10000 == 0) {
-                log.print(i + "/" + INSERT_ITERATIONS);
-            }
-        }
+        List<Row> rows = IntStream.range(0, INSERT_ITERATIONS)
+            .mapToObj( i -> {
+                Order orderTable = new Order(
+                    UUID.randomUUID().toString(),
+                    "This is a long description. A lot of tables could have something like this so this will be a good test to include this.",
+                    BigDecimal.valueOf(Math.abs(random.nextLong(0, 100))),
+                    BigDecimal.valueOf(Math.abs(random.nextLong(0, 5))),
+                    OffsetDateTime.now());
+                if (i > 10000 && i % 10000 == 0) {
+                    log.print(i + "/" + INSERT_ITERATIONS);
+                }
+                return MarshallingService.parseRow(orderTable).get(0);
+            })
+            .toList();
+
+        tableName = rows.get(0).getTableName();
+        Timer timer = Timer.start();
+        Insert.insert(rows, database, database.getTableByName(tableName), true);
         timer.printRestart();
 
         Table<?> table = database.getTableByName(tableName);
         long size = table.getSize(table.getRandomPartition());
 
         assertEquals(INSERT_ITERATIONS + ITERATIONS, size - 1);
+    }
+
+    @Test
+    void getIndices() {
+        Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+
+        String indexPath = "db/Order/indecis_Order/total/0.index";
+        List<IndexRoute> indices = BaseOperationService.getRoutes(indexPath, partition, 8L, null);
+
+        indices.forEach( route -> {
+            log.debug(route.toString());
+
+            String row = BaseOperationService
+                .getLinesFromPartition(partition, table, List.of(route) )
+                .collect(Collectors.joining("\n"));
+            log.debug(row);
+        });
+
+        log.debug("Total Rows: " + indices.size());
     }
 
     @Test

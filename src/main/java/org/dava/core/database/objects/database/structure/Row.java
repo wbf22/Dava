@@ -3,6 +3,7 @@ package org.dava.core.database.objects.database.structure;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
 
+import java.io.Serializable;
 import java.util.*;
 
 import static org.dava.common.Checks.*;
@@ -31,7 +32,7 @@ public class Row {
                 );
             }
             tableName = table.getTableName();
-        } catch(IndexOutOfBoundsException e) {
+        } catch(Exception e) {//IndexOutOfBoundsException
             throw new DavaException(
                 CORRUPTED_ROW_ERROR,
                 "Error trying to parse table row to table type " + table.getTableName() + ". Raw row: " + line,

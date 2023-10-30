@@ -1,10 +1,13 @@
 package org.dava.core.database.service.fileaccess;
 
+import org.dava.core.database.service.objects.RowWritePackage;
+
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
+import java.util.stream.IntStream;
 
 public class FileUtil {
 
@@ -126,6 +129,25 @@ public class FileUtil {
         }
     }
 
+    public static void writeBytes(String filePath, List<RowWritePackage> writePackages) throws IOException {
+        try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
+            writePackages.parallelStream()
+                .forEach( writePackage -> {
+                    try {
+                        // Move to the desired position in the file
+                        long offset = (writePackage.getRoute().getOffsetInTable() == null)? file.length() : writePackage.getRoute().getOffsetInTable();
+                        file.seek(writePackage.getRoute().getOffsetInTable());
+
+                        // Write data at the current position
+                        file.write( writePackage.getDataAsBytes() );
+
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+        }
+    }
+
     public static void writeFileAppend(String filePath, String data) throws IOException {
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             file.seek(file.length());
@@ -136,6 +158,13 @@ public class FileUtil {
     public static void writeBytesAppend(String filePath, byte[] data) throws IOException {
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             file.seek(file.length());
+            file.write(data);
+        }
+    }
+
+    public static void replaceFile(String filePath, byte[] data) throws IOException {
+        try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
+            file.setLength( 0 );
             file.write(data);
         }
     }
@@ -208,34 +237,39 @@ public class FileUtil {
         return file.length();
     }
 
-    public static byte[] popRandomBytes(String filePath, int headerBytes, int bytesToPop, Random random) throws IOException {
+    public static void popBytes(String filePath, int bytesToPop, List<Long> startBytes) throws IOException {
         File file = new File(filePath);
+        startBytes.sort(Long::compareTo);
 
         try (RandomAccessFile raf = new RandomAccessFile(file, "rw")) {
-            // get a random set of bytes
-            long startByte = (
-                random.nextLong( 0, raf.length()-headerBytes/bytesToPop )
-            ) * bytesToPop + headerBytes;
-            raf.seek(startByte);
-            byte[] buffer = new byte[bytesToPop];
-            int bytesRead = raf.read(buffer);
-            byte[] randomData = (bytesRead != -1)? buffer : null;
 
-            // get lastRow
-            long endStartByte = raf.length() - bytesToPop;
-            raf.seek(endStartByte);
-            byte[] endBuffer = new byte[bytesToPop];
-            int endBytesRead = raf.read(endBuffer);
-            byte[] endData = (endBytesRead != -1)? endBuffer : null;
+            while (!startBytes.isEmpty()) {
+                // pop empties off the bottom of the file, if they're on the list
+                long startByteToRemove = startBytes.get(startBytes.size() - 1);
+                startBytes = startBytes.subList(0, startBytes.size() - 1);
 
-            // switch the two
-            raf.seek(startByte);
-            raf.write(endData);
+                if ( startByteToRemove == raf.length() - bytesToPop) {
+                    raf.setLength(raf.length() - bytesToPop);
+                }
+                else {
+                    // otherwise switch with last row and pop.
 
-            // truncate the end bytes off the file
-            raf.setLength(startByte);
+                    // get lastRow
+                    long endStartByte = raf.length() - bytesToPop;
+                    raf.seek(endStartByte);
+                    byte[] endBuffer = new byte[bytesToPop];
+                    int endBytesRead = raf.read(endBuffer);
+                    byte[] endData = (endBytesRead != -1)? endBuffer : null;
 
-            return randomData;
+                    // switch the two
+                    raf.seek(startByteToRemove);
+                    raf.write(endData);
+
+                    // truncate the end bytes off the file
+                    raf.setLength(raf.length() - bytesToPop);
+                }
+
+            }
         }
     }
 

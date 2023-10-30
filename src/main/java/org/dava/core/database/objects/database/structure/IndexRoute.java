@@ -4,6 +4,7 @@ import org.dava.common.ArrayUtil;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
+import java.io.Serializable;
 import java.util.List;
 import java.util.stream.IntStream;
 
@@ -62,10 +63,12 @@ public class IndexRoute {
 
 
 
+    /*
+        Getter setter
+     */
     public String getPartition() {
         return partition;
     }
-
 
     public Long getOffsetInTable() {
         return offsetInTable;
@@ -79,12 +82,21 @@ public class IndexRoute {
         this.partition = partition;
     }
 
-
     public void setOffsetInTable(Long offsetInTable) {
         this.offsetInTable = offsetInTable;
     }
 
     public void setLengthInTable(Integer lengthInTable) {
         this.lengthInTable = lengthInTable;
+    }
+
+
+    @Override
+    public String toString() {
+        return "IndexRoute{" +
+            "partition='" + partition + '\'' +
+            ", offsetInTable=" + offsetInTable +
+            ", lengthInTable=" + lengthInTable +
+            '}';
     }
 }

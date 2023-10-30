@@ -2,6 +2,7 @@ package org.dava.core.database.objects.dates;
 
 import org.dava.core.database.objects.exception.DavaException;
 
+import java.io.Serializable;
 import java.time.*;
 
 import static org.dava.core.database.objects.exception.ExceptionType.DATE_PARSE_ERROR;

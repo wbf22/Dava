@@ -44,12 +44,13 @@ Indices are created for every column. They are basically a file that stores a ro
 <summary>How it works</summary>
 
 ---
+The index .index files contain addresses to each line that has that value for that column.
 
-Each .index is made up of appended bytes (representing rows in the table with that index value). Each 8 bytes represents a long which represents a row in the table:
+Each .index is made up of appended bytes (representing rows in the table with that index value). Each 10 bytes represents the offset in the table (6 bytes), and the length of the row (4 bytes):
 ``` 
 [route 1, bytes][route 2, bytes]...
 ```
-The index .index files contain addresses to each line that has that value for that column. You can calculate the number of indices by dividing the file size by 8. The index size can be used to optimize queries, in that the most restricting condition can be used to retrieve necessary data, and the rest can be applied as filters.
+The first 8 bytes of the index file represent the amount of routes in the index. The index size can be used to optimize queries, in that the most restricting condition can be used to retrieve necessary data, and the rest can be applied as filters.
 
 ---
 </details>

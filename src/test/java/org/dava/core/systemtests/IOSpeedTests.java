@@ -1,12 +1,23 @@
 package org.dava.core.systemtests;
 
+import org.dava.common.Timer;
+import org.dava.core.database.objects.database.structure.IndexRoute;
+import org.dava.core.database.objects.database.structure.Row;
+import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.service.fileaccess.FileUtil;
+import org.dava.core.database.service.objects.IndexWritePackage;
+import org.dava.core.database.service.objects.RollbackRecord;
+import org.dava.core.database.service.objects.RowWritePackage;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 import org.junit.jupiter.api.Test;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 class IOSpeedTests {
     /**
@@ -25,6 +36,10 @@ class IOSpeedTests {
      *  - reading a file name is slightly faster than reading a one line file
      *  - reading individual index files is can be x500 times slower than reading one large index
      *  - reading a specific line (random access) is slower than reading all lines until the file is over 1000 lines
+     *  - writing to n separate files is like 300x slower than writing n lines to one file
+     *  - jumping (seek) within a file is just as costly as opening new files to write
+     *  - writing an object to file with java serialization can be pretty slow, 16ms. Reading is 3ms. ToString and writing
+     *    as bytes is 7ms
      */
 
 
@@ -181,13 +196,15 @@ class IOSpeedTests {
     }
 
     @Test
-    void rows_read_per_file_read() throws IOException {
+    void readAllLinesSplit_vs_randomAccessRow_vs_readRowsFromDifferentFiles() throws IOException {
 
         /*
             TEST RESULTS:
                 reading 500000 rows: 43
                 reading one row 3000 times: 43
                 Large File more efficient until size: 166
+
+
                 reading 500000 rows: 22
                 reading one row 3000 times: 44
                 Large File more efficient until size: 166
@@ -444,7 +461,6 @@ class IOSpeedTests {
         System.out.println(System.currentTimeMillis() - time);
     }
 
-
     @Test
     void calculateRoute_vs_readRoutes() {
         /*
@@ -461,6 +477,150 @@ class IOSpeedTests {
         long lVal = TypeToByteUtil.byteArrayToLong(bytes);
         System.out.println(lVal);
 
+
+    }
+
+    @Test
+    void writeLinesToSeperateFiles_vs_writeLinesToOne() throws IOException {
+        /*
+            TEST RESULTS:
+                writing to NUM_ROWS files: 2896
+                writing to 1 files: 8
+
+         */
+
+        File directory = new File("test");
+        directory.mkdirs();
+        String row = "$450,02/18/2020";
+
+        int ITERATIONS = 100;
+        int NUM_ROWS = 100;
+
+        for (int i = 0; i < NUM_ROWS; i++) {
+            FileUtil.createFile("test/" + i + ".csv");
+        }
+
+
+        // write NUM_ROWS lines to NUM_ROWS files
+        long time = System.currentTimeMillis();
+        for (int j = 0; j < ITERATIONS; j++) {
+            for (int i = 0; i < NUM_ROWS; i++) {
+                FileUtil.writeBytes("test/" + i + ".csv", 0, (i + "," + row).getBytes(StandardCharsets.UTF_8) );
+            }
+        }
+        System.out.print("writing to NUM_ROWS files: ");
+        System.out.println(System.currentTimeMillis() - time);
+
+
+        // write NUM_ROWS lines to 1 file
+        time = System.currentTimeMillis();
+        for (int j = 0; j < ITERATIONS; j++) {
+            StringBuilder stringBuilder = new StringBuilder();
+            for (int i = 0; i < NUM_ROWS; i++) {
+                stringBuilder.append(row).append("\n");
+            }
+            FileUtil.writeBytes("test/" + 0 + ".csv", 0, stringBuilder.toString().getBytes(StandardCharsets.UTF_8) );
+        }
+        System.out.print("writing to 1 files: ");
+        System.out.println(System.currentTimeMillis() - time);
+
+    }
+
+    @Test
+    void writeLinesToSeperateFiles_vs_writeLinesToOneJumping() throws IOException {
+        /*
+            TEST RESULTS:
+                writing to NUM_ROWS files: 61
+                writing to 1 file jumping: 78
+
+            jumping in the same file is just as bad as jumping to other files
+
+         */
+
+        File directory = new File("test");
+        directory.mkdirs();
+        String row = "$450,02/18/2020 \n";
+
+        int ITERATIONS = 100;
+        int NUM_ROWS = 10;
+        int LARGE_FILE_ROWS = 1000;
+
+
+
+        // write NUM_ROWS lines to NUM_ROWS files
+        for (int i = 0; i < NUM_ROWS; i++) {
+            FileUtil.createFile("test/" + i + ".csv");
+        }
+        long time = System.currentTimeMillis();
+        for (int j = 0; j < ITERATIONS; j++) {
+            for (int i = 0; i < NUM_ROWS; i++) {
+                FileUtil.writeBytes("test/" + i + ".csv", 0, (i + "," + row).getBytes(StandardCharsets.UTF_8) );
+            }
+        }
+        System.out.print("writing to NUM_ROWS files: ");
+        System.out.println(System.currentTimeMillis() - time);
+
+
+        // write NUM_ROWS lines to 1 file jumping
+        byte[] bytes = (1 + "," + row).getBytes(StandardCharsets.UTF_8);
+        for (int i = 0; i < LARGE_FILE_ROWS; i++) {
+            FileUtil.writeBytes("test/" + 0 + ".csv", (long) i * bytes.length, bytes);
+        }
+        int step = LARGE_FILE_ROWS/NUM_ROWS;
+        time = System.currentTimeMillis();
+        for (int j = 0; j < ITERATIONS; j++) {
+            for (int i = 0; i < NUM_ROWS; i++) {
+                FileUtil.writeBytes("test/" + 0 + ".csv", step * i, (i + "," + row).getBytes(StandardCharsets.UTF_8) );
+            }
+        }
+        System.out.print("writing to 1 file jumping: ");
+        System.out.println(System.currentTimeMillis() - time);
+    }
+
+    @Test
+    void writeComplexObjectToFile() throws IOException {
+        RollbackRecord rollbackRecord = new RollbackRecord(
+            List.of(
+                new RowWritePackage(
+                    new IndexRoute("Order", 123456L, 123),
+                    new Row(new HashMap<>(), "Order"),
+                    new byte[150]
+                )
+            ),
+            Map.of(
+                "some path",
+                List.of(
+                    new IndexWritePackage(
+                        new IndexRoute("Order", 123456L, 123),
+                        Date.class,
+                        Date.of("2023-08-01", LocalDate.class),
+                        "some path"
+                    )
+                )
+            ),
+            List.of(
+                new IndexRoute("Order", 123456L, 123)
+            )
+        );
+
+//        Timer timer = Timer.start();
+//        FileUtil.writeObjectToFile("test.obj", rollbackRecord);
+//        timer.printRestart();
+//
+//        timer = Timer.start();
+//        rollbackRecord = FileUtil.readObjectFromFile("test.obj", RollbackRecord.class);
+//        timer.printRestart();
+//
+//        System.out.println(rollbackRecord);
+
+
+        String serialized = rollbackRecord.toString();
+
+        Timer timer = Timer.start();
+        FileUtil.writeBytes("test.obj", 0, serialized.getBytes());
+        timer.printRestart();
+
+        System.out.println(rollbackRecord);
 
     }
 

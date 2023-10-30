@@ -13,8 +13,8 @@ class DirectoryMeasurementsTest {
 
     @Test
     void mesaure_directory() {
-//        String DIRECTORY = "/Users/brandon.fowler/Desktop/db";
-        String DIRECTORY = "db";
+        String DIRECTORY = "/Users/brandon.fowler/Desktop/db";
+//        String DIRECTORY = "db";
 
 
         getSize(DIRECTORY, 0);

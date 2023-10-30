@@ -4,7 +4,11 @@ package org.dava.core.database.objects.database.structure;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.fileaccess.FileUtil;
+import org.dava.core.database.service.objects.EmptiesPackage;
+import org.dava.core.database.service.objects.Empty;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
+import org.dava.external.annotations.PrimaryKey;
+import org.dava.external.annotations.constraints.Unique;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
@@ -37,7 +41,8 @@ public class Table<T> {
     private Random random;
 
 
-    public Table(Class<T> tableClass, String databaseRoot) {
+
+    public Table(Class<T> tableClass, String databaseRoot, long seed) {
 
         org.dava.external.annotations.Table annotation = Optional.ofNullable(
             tableClass.getAnnotation( org.dava.external.annotations.Table.class )
@@ -48,21 +53,29 @@ public class Table<T> {
         this.tableName = (annotation.name().isEmpty())? tableClass.getSimpleName() : annotation.name();
 
         // TODO later get this stuff from the master sql file
+        // build table schema
         columns = new LinkedHashMap<>();
         for (Field field : tableClass.getDeclaredFields()) {
             org.dava.external.annotations.Column columnAnn = field.getAnnotation( org.dava.external.annotations.Column.class );
             String name = (columnAnn == null)? field.getName() : columnAnn.name();
+
+            Unique unique = field.getAnnotation( Unique.class );
+            PrimaryKey primaryKey = field.getAnnotation(PrimaryKey.class );
+            boolean isUnique = unique != null || primaryKey != null;
+
             columns.put(
                 name,
-                new Column<>(name, field.getType())
+                new Column<>(name, field.getType(), isUnique)
             );
         }
 
-
+        // make empties file and rollback log
         this.directory = databaseRoot + "/" + tableName;
         try {
-            FileUtil.createDirectoriesIfNotExist(this.directory);
-            makeEmtpiesFileIfDoesntExist(tableName);
+//            FileUtil.createDirectoriesIfNotExist(this.directory);
+            makeEmptiesFileIfDoesntExist(tableName);
+            FileUtil.createFile( getRollbackPath(tableName) );
+
         } catch (IOException e) {
             throw new DavaException(
                 BASE_IO_ERROR,
@@ -75,9 +88,10 @@ public class Table<T> {
         partitions = new ArrayList<>();
         partitions.add(tableName);
 
+        // set up the column titles
         initTableCsv(partitions);
 
-        random = new Random(System.currentTimeMillis());
+        random = new Random(seed);
 
     }
 
@@ -109,7 +123,7 @@ public class Table<T> {
                 }
 
                 // set table row count to 1
-                setSize(partition, 1L);
+                setSize(partition, 0L, 1L);
             }
         }
         rowLengths = lengths;
@@ -131,12 +145,45 @@ public class Table<T> {
      * Get an empty row in the table.
      * @return next empty row in the table, or null there are no empty rows.
      */
-    public IndexRoute getEmptyRow(String partition) {
-        return BaseOperationService.popEmpty(getTablePath(partition) + ".empties", 8, random);
+    public EmptiesPackage getEmptyRows(String partition, int emptiesNeeded) {
+
+        String emptiesFile = emptiesFilePath(partition);
+
+        try {
+            return BaseOperationService.getEmpties(emptiesNeeded, emptiesFile, random);
+        } catch (IOException e) {
+            throw new DavaException(
+                BASE_IO_ERROR,
+                "Error getting empty row for insert from table meta file: " + emptiesFile,
+                e
+            );
+        }
     }
 
-    public void makeEmtpiesFileIfDoesntExist(String partition) throws IOException {
-        String path = getTablePath(partition) + ".empties";
+    public void popEmptiesRoutes(String partition, List<Empty> emptiesPackages) {
+
+        String emptiesFile = emptiesFilePath(partition);
+        String rollbackPath = getRollbackPath(partition);
+
+        try {
+            BaseOperationService.popRoutes(rollbackPath, emptiesFile, emptiesPackages);
+        } catch (IOException e) {
+            throw new DavaException(
+                BASE_IO_ERROR,
+                "Error getting empty row for insert from table meta file: " + emptiesFile,
+                e
+            );
+        }
+
+
+    }
+
+
+    public void makeEmptiesFileIfDoesntExist(String partition) throws IOException {
+        String folder = emptiesFolder(partition);
+        FileUtil.createDirectoriesIfNotExist(folder);
+
+        String path = folder + "/" + partition + ".empties";
         if ( !FileUtil.exists( path ) ) {
             FileUtil.writeBytes(
                 path,
@@ -148,7 +195,13 @@ public class Table<T> {
 
     public void writeEmptyRow(long row) {
         String partition = getRandomPartition();
-        BaseOperationService.writeLong(getTablePath(partition), row);
+        BaseOperationService.writeLong(emptiesFilePath(partition), row);
+    }
+    private String emptiesFolder(String partition) {
+        return directory + "/indices_" + partition;
+    }
+    private String emptiesFilePath(String partition) {
+        return directory + "/indices_" + partition + "/" + partition + ".empties";
     }
 
     /**
@@ -156,7 +209,7 @@ public class Table<T> {
      */
     public long getSize(String partition) {
         try {
-            byte[] bytes = FileUtil.readBytes(getTablePath(partition) + ".empties", 0, 8);
+            byte[] bytes = FileUtil.readBytes(emptiesFilePath(partition), 0, 8);
             return TypeToByteUtil.byteArrayToLong(bytes);
         } catch (IOException e) {
             throw new DavaException(
@@ -167,13 +220,18 @@ public class Table<T> {
         }
     }
 
-    public void setSize(String partition, Long newSize) {
+    public void setSize(String partition, Long oldSize, Long newSize) {
         try {
-            FileUtil.writeBytes(
-                getTablePath(partition) + ".empties",
-                0,
-                TypeToByteUtil.longToByteArray(newSize)
+            BaseOperationService.performOperation(
+                () -> FileUtil.writeBytes(
+                    emptiesFilePath(partition),
+                    0,
+                    TypeToByteUtil.longToByteArray(newSize)
+                ),
+                "S:" + oldSize + "," + newSize + "\n",
+                getRollbackPath(partition)
             );
+
         } catch (IOException e) {
             throw new DavaException(
                 BASE_IO_ERROR,
@@ -203,9 +261,12 @@ public class Table<T> {
         }
     }
 
-
     public Column<?> getColumn(String columnName) {
         return columns.get(columnName);
+    }
+
+    public String getRollbackPath(String partition) {
+        return directory + "/indices_" + partition + "/" + partition + ".rollback";
     }
 
 
@@ -225,5 +286,7 @@ public class Table<T> {
         return partitions;
     }
 
-
+    public Random getRandom() {
+        return random;
+    }
 }

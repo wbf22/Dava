@@ -18,10 +18,10 @@ public class Database {
     private Map<String, Table<?>> tables;
 
 
-    public Database(String rootDirectory, List<Class<?>> tableClasses) {
+    public Database(String rootDirectory, List<Class<?>> tableClasses, long seed) {
         this.rootDirectory = rootDirectory;
         this.tables = tableClasses.stream()
-            .map(classT -> new Table<>(classT, rootDirectory))
+            .map(classT -> new Table<>(classT, rootDirectory, seed))
             .collect(Collectors.toMap(Table::getTableName, obj -> obj));
     }
 
