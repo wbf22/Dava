@@ -6,5 +6,5 @@ import java.lang.annotation.*;
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.FIELD)
-public @interface CreateIndex {
+public @interface Indexed {
 }

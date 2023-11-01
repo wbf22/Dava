@@ -3,6 +3,7 @@ package org.dava.core.database.objects.exception;
 public enum ExceptionType {
     DATE_PARSE_ERROR,
     CORRUPTED_ROW_ERROR,
+    UNIQUE_CONSTRAINT_VIOLATION,
     ROLLBACK_ERROR,
     INDEX_CREATION_ERROR,
     INDEX_READ_ERROR,

@@ -6,18 +6,15 @@ import org.dava.core.database.objects.database.structure.Row;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.objects.IndexWritePackage;
-import org.dava.core.database.service.objects.RollbackRecord;
 import org.dava.core.database.service.objects.RowWritePackage;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 import org.junit.jupiter.api.Test;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 class IOSpeedTests {
     /**
@@ -579,29 +576,31 @@ class IOSpeedTests {
 
     @Test
     void writeComplexObjectToFile() throws IOException {
-        RollbackRecord rollbackRecord = new RollbackRecord(
-            List.of(
-                new RowWritePackage(
-                    new IndexRoute("Order", 123456L, 123),
-                    new Row(new HashMap<>(), "Order"),
-                    new byte[150]
-                )
-            ),
-            Map.of(
-                "some path",
-                List.of(
-                    new IndexWritePackage(
-                        new IndexRoute("Order", 123456L, 123),
-                        Date.class,
-                        Date.of("2023-08-01", LocalDate.class),
-                        "some path"
-                    )
-                )
-            ),
-            List.of(
-                new IndexRoute("Order", 123456L, 123)
-            )
-        );
+//        RollbackRecord rollbackRecord = new RollbackRecord(
+//            List.of(
+//                new RowWritePackage(
+//                    new IndexRoute("Order", 123456L, 123),
+//                    new Row(new HashMap<>(), "Order"),
+//                    new byte[150]
+//                )
+//            ),
+//            Map.of(
+//                "some path",
+//                List.of(
+//                    new IndexWritePackage(
+//                        new IndexRoute("Order", 123456L, 123),
+//                        null,
+//                        Date.class,
+//                        null,
+//                        Date.of("2023-08-01", LocalDate.class),
+//                        "some path"
+//                    )
+//                )
+//            ),
+//            List.of(
+//                new IndexRoute("Order", 123456L, 123)
+//            )
+//        );
 
 //        Timer timer = Timer.start();
 //        FileUtil.writeObjectToFile("test.obj", rollbackRecord);
@@ -614,13 +613,90 @@ class IOSpeedTests {
 //        System.out.println(rollbackRecord);
 
 
-        String serialized = rollbackRecord.toString();
+//        String serialized = rollbackRecord.toString();
+//
+//        Timer timer = Timer.start();
+//        FileUtil.writeBytes("test.obj", 0, serialized.getBytes());
+//        timer.printRestart();
+//
+//        System.out.println(rollbackRecord);
+
+    }
+
+
+    @Test
+    void listSubfolders_vs_readLarge() throws IOException {
+        /*
+            TEST RESULTS (iterations 50000):
+                reading large file: 420
+                sub folders: 184
+
+            reading sub folders is faster
+         */
+
+
+        int ITERATIONS = 10000;
+
+        File directory = new File("one_rows");
+        directory.mkdirs();
+        byte[] file = new byte[ITERATIONS * 8];
+        FileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
+        int fileSize = Math.toIntExact(FileUtil.fileSize("one_rows/all_lines_index.index"));
+
+
+        long time = System.currentTimeMillis();
+        for (int i = 0; i < ITERATIONS; i++) {
+            byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index", 0L, fileSize);
+        }
+        System.out.print("reading large file: ");
+        System.out.println(System.currentTimeMillis() - time);
+
+
+
+        time = System.currentTimeMillis();
+        for (int i = 0; i < ITERATIONS; i++) {
+            List<File> folders = FileUtil.getSubFolders("src");
+        }
+        System.out.print("sub folders: ");
+        System.out.println(System.currentTimeMillis() - time);
+    }
+
+    @Test
+    void listSubFoldersRecursive_speed_test() throws IOException {
+
 
         Timer timer = Timer.start();
-        FileUtil.writeBytes("test.obj", 0, serialized.getBytes());
+        FileUtil.getLeafFolders("db/Order/indices_Order");
+        timer.printRestart("leaf");
+
+
+        timer = Timer.start();
+        List<File> dirs =  FileUtil.getSubFoldersRecursive("db/Order/indices_Order/time");
+        timer.printRestart(String.valueOf(dirs.size()));
+
+
+        timer = Timer.start();
+        FileUtil.getSubFoldersRecursive("db/Order/indices_Order/orderId");
         timer.printRestart();
 
-        System.out.println(rollbackRecord);
+
+        timer = Timer.start();
+        FileUtil.getSubFoldersRecursive("db/Order/indices_Order/total");
+        timer.printRestart();
+
+
+        File directory = new File("one_rows");
+        directory.mkdirs();
+        byte[] file = new byte[1000 * 8];
+
+
+        timer = Timer.start();
+        FileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
+        timer.printRestart("writing directories to file");
+
+        timer = Timer.start();
+        byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index", 0L, file.length);
+        timer.printRestart("reading directories from file");
 
     }
 

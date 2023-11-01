@@ -1,9 +1,7 @@
 # Todo
 - Add constraint checking in marshalling service or somewhere else
 - Change how indices are made
-  - dates should be indexed differently to do range search
   - text values should have annotation to cause different indexing
-  - numeric values could be indexed differently
 - Handle deletes
 - Handle updates
 - Make server option
@@ -15,4 +13,9 @@
 - Flyway type startup option
 - Handle commas in text columns
 - Handle edge cases near max table size
+
+# ToTest
+- queries without limit's or offsets
+- Different modes more thoroughly 
+- 
 

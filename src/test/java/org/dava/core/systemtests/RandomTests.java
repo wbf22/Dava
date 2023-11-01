@@ -1,12 +1,17 @@
 package org.dava.core.systemtests;
 
+import org.dava.common.Timer;
 import org.dava.common.logger.Logger;
+import org.dava.core.database.objects.dates.ZonedDate;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.ZonedDateTime;
+import java.util.Random;
+import java.util.UUID;
 import java.util.stream.IntStream;
 
 public class RandomTests {
@@ -22,7 +27,6 @@ public class RandomTests {
 
          */
 
-
         byte[] bytes = FileUtil.readBytes("db/Order/Order.csv");
 
         IntStream.range(0, bytes.length)
@@ -32,10 +36,6 @@ public class RandomTests {
                     log.info("found byte: " + atI);
                 }
             });
-
-
-
-
     }
 
     @Test
@@ -58,5 +58,99 @@ public class RandomTests {
         String str = new String(bytes, StandardCharsets.UTF_8);
         System.out.println(str);
     }
+
+    @Test
+    void stringBuilding_vs_concat() {
+        /*
+            TEST RESULTS:
+                35ms
+                20ms
+                33ms
+
+            using stringbuilder is faster, even for short strings. Also don't use the constructor for stringbuilder, just
+            append().
+         */
+
+        int ITERATIONS = 1000000;
+
+        String base = "this is a base string";
+        String addition = " and here is the addition";
+        String terminator = "/";
+
+        Timer timer = Timer.start();
+        IntStream.range(0, ITERATIONS)
+            .forEach( i -> {
+                String s = base + addition + terminator + terminator;
+            });
+        timer.printRestart();
+
+        timer = Timer.start();
+        IntStream.range(0, ITERATIONS)
+            .forEach( i -> {
+                String s = new StringBuilder().append(base).append(addition).append(terminator).append(terminator).toString();
+            });
+        timer.printRestart();
+
+        timer = Timer.start();
+        IntStream.range(0, ITERATIONS)
+            .forEach( i -> {
+                String s = new StringBuilder(base).append(addition).append(terminator).append(terminator).toString();
+            });
+        timer.printRestart();
+
+    }
+
+
+    @Test
+    void test_random_with_seed() {
+        /*
+            TEST RESULTS:
+                35ms
+                20ms
+                33ms
+
+            using stringbuilder is faster, even for short strings. Also don't use the constructor for stringbuilder, just
+            append().
+         */
+
+        int SEED = 123456789;
+
+        Random random = new Random(SEED);
+        IntStream.range(0, 3)
+            .forEach( i -> {
+                log.info(String.valueOf(random.nextInt()));
+            });
+
+
+        Random randomN = new Random(SEED);
+        IntStream.range(0, 3)
+            .forEach( i -> {
+                log.info(String.valueOf(randomN.nextInt()));
+            });
+    }
+
+
+    @Test
+    void deterministic_uuid() {
+        IntStream.range(0, 10)
+            .forEach(i ->
+                log.info(UUID.nameUUIDFromBytes(String.valueOf(i).getBytes()).toString())
+            );
+
+        log.space();
+
+
+        IntStream.range(0, 10)
+            .forEach(i ->
+                log.info(UUID.nameUUIDFromBytes(String.valueOf(i).getBytes()).toString())
+            );
+    }
+
+
+    @Test
+    void deleteDirectory() throws IOException {
+        FileUtil.deleteDirectory("db" + "/Order");
+    }
+
 
 }

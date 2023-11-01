@@ -1,14 +1,16 @@
 package org.dava.core.database.objects.database.structure;
 
 public class Column<T> {
-    private String name;
-    private Class<T> type;
-    private boolean isUnique;
+    private final String name;
+    private final Class<T> type;
+    private final boolean isIndexed;
+    private final boolean isUnique;
 
 
-    public Column(String name, Class<T> type, boolean isUnique) {
+    public Column(String name, Class<T> type, boolean isIndexed, boolean isUnique) {
         this.name = name;
         this.type = type;
+        this.isIndexed = isIndexed;
         this.isUnique = isUnique;
     }
 
@@ -20,7 +22,13 @@ public class Column<T> {
         return type;
     }
 
+    public boolean isIndexed() {
+        return isIndexed;
+    }
+
     public boolean isUnique() {
         return isUnique;
     }
+
+
 }

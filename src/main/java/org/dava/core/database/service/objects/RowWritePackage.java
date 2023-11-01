@@ -6,17 +6,16 @@ import org.dava.core.database.objects.database.structure.Row;
 import java.io.Serializable;
 import java.util.Arrays;
 
-public class RowWritePackage {
+public class RowWritePackage extends WritePackage {
 
     private IndexRoute route;
     private Row row;
-    private byte[] dataAsBytes;
 
 
     public RowWritePackage(IndexRoute route, Row row, byte[] dataAsBytes) {
+        super(route.getOffsetInTable(), dataAsBytes);
         this.route = route;
         this.row = row;
-        this.dataAsBytes = dataAsBytes;
     }
 
 
@@ -32,17 +31,6 @@ public class RowWritePackage {
         return row;
     }
 
-    public byte[] getDataAsBytes() {
-        return dataAsBytes;
-    }
 
 
-    @Override
-    public String toString() {
-        return "RowWritePackage{" +
-            "route=" + route +
-            ", row=" + row +
-            ", dataAsBytes=" + Arrays.toString(dataAsBytes) +
-            '}';
-    }
 }

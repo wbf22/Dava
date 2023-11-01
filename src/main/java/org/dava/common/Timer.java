@@ -15,7 +15,12 @@ public class Timer {
 
 
     public void printRestart() {
-        System.out.println(System.currentTimeMillis() - startTime + "ms");
+        printRestart("");
+    }
+
+    public void printRestart(String message) {
+        long elapsed = System.currentTimeMillis() - startTime;
+        System.out.println(message + " " + elapsed + "ms");
         startTime = System.currentTimeMillis();
     }
 

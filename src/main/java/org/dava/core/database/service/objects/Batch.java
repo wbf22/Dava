@@ -8,15 +8,17 @@ import java.util.Map;
 public class Batch {
 
     private EmptiesPackage tableEmpties;
-
+    private List<RowWritePackage> rowWritePackages;
     private Map<String, List<IndexWritePackage>> indexWriteGroups;
-
     private Map<String, EmptiesPackage> indexEmpties;
+    private List<String> numericRepartitions;
 
 
     public Batch() {
         this.indexWriteGroups = new HashMap<>();
         this.indexEmpties = new HashMap<>();
+        this.numericRepartitions = new ArrayList<>();
+        this.tableEmpties = new EmptiesPackage();
     }
 
     public void addIndexWritePackage(String indexPath, IndexWritePackage writePackage) {
@@ -40,16 +42,19 @@ public class Batch {
         return null;
     }
 
+    public void addNumericRepartition(String indexPath) {
+        this.numericRepartitions.add(indexPath);
+    }
+
     public String makeRollbackString() {
         StringBuilder builder = new StringBuilder();
 
         // for rolling back rows added to the table
         // and new routes added to each index
         indexWriteGroups.forEach( (indexPath, groups) -> {
-            builder.append("I:").append(indexPath);
+            builder.append("I:").append(indexPath).append(";");
             groups.forEach(writePackage ->
                 builder.append("R:")
-                    .append(indexPath)
                     .append(writePackage.getRoute().getOffsetInTable())
                     .append(",")
                     .append(writePackage.getRoute().getLengthInTable())
@@ -87,6 +92,13 @@ public class Batch {
             // add each route above to the respective index empties file
         });
 
+        // for rolling back numeric repartitions
+        numericRepartitions.forEach( folderPath ->
+            builder.append("N:")
+                .append(folderPath)
+                .append("\n")
+        );
+
         return builder.toString();
     }
 
@@ -95,6 +107,18 @@ public class Batch {
     /*
         Getter setter
      */
+
+    public EmptiesPackage getTableEmpties() {
+        return tableEmpties;
+    }
+
+    public List<RowWritePackage> getRowWritePackages() {
+        return rowWritePackages;
+    }
+
+    public void setRowWritePackages(List<RowWritePackage> rowWritePackages) {
+        this.rowWritePackages = rowWritePackages;
+    }
 
     public Map<String, List<IndexWritePackage>> getIndexWriteGroups() {
         return indexWriteGroups;
@@ -110,5 +134,13 @@ public class Batch {
 
     public void setTableEmpties(EmptiesPackage tableEmpties) {
         this.tableEmpties = tableEmpties;
+    }
+
+    public List<String> getNumericRepartitions() {
+        return numericRepartitions;
+    }
+
+    public void setNumericRepartitions(List<String> numericRepartitions) {
+        this.numericRepartitions = numericRepartitions;
     }
 }

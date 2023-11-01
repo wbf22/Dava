@@ -3,10 +3,7 @@ package org.dava.core.service;
 import org.dava.common.StreamUtil;
 import org.dava.common.logger.Level;
 import org.dava.common.logger.Logger;
-import org.dava.core.database.objects.database.structure.Database;
-import org.dava.core.database.objects.database.structure.IndexRoute;
-import org.dava.core.database.objects.database.structure.Row;
-import org.dava.core.database.objects.database.structure.Table;
+import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.OffsetDate;
 import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.Insert;
@@ -37,59 +34,74 @@ class OperationServiceTest {
 
     static Database database;
     static int ITERATIONS = 1000;
-    static Level logLevel = Level.DEBUG;
+    static Level logLevel = Level.INFO;
 //    static String DB_ROOT = "/Users/brandon.fowler/Desktop/db";
     static String DB_ROOT = "db";
+    static Long seed = -183502108378805369L;
     private static final Logger log = Logger.getLogger(OperationServiceTest.class.getName());
 
 
-    static void setUpWipeAndPopulate(Long seed) throws IOException {
+    static void setUpWipeAndPopulate() throws IOException {
         if (FileUtil.exists(DB_ROOT + "/Order")) {
             FileUtil.deleteDirectory(DB_ROOT + "/Order");
         }
 
         seed = (seed == null)? new Random().nextLong() : seed;
 
-        setUpUseExisting(seed);
+        setUpUseExisting();
 
-        // make 1000 entries
-        Random random = new Random(seed);
+        Table<?> table = database.getTableByName("Order");
+        List<Row> rows = makeRows(seed, ITERATIONS);
 
-        String tableName = "";
-        for (int i = 0; i < ITERATIONS; i++) {
-            OffsetDateTime time = OffsetDateTime.now();
-            time = time.withYear(random.nextInt(2000, 2023));
-            time = time.withMonth(random.nextInt(1, 13));
-            time = time.withDayOfMonth(random.nextInt(1, 28));
-            time = time.withHour(random.nextInt(0, 24));
-            time = time.withMinute(random.nextInt(0, 60));
-            time = time.withSecond(random.nextInt(0, 60));
-            time = (random.nextBoolean())? time.withOffsetSameInstant(ZoneOffset.UTC) : time;
-//            time = time.withOffsetSameInstant(ZoneOffset.UTC);
-            Order orderTable = new Order(
-                UUID.randomUUID().toString(),
-                "This is a long description. A lot of tables could have something like this so this will be a good test.",
-                BigDecimal.valueOf(Math.abs(random.nextLong(0, 100))),
-                BigDecimal.valueOf(Math.abs(random.nextLong(0, 5))),
-                time
-            );
-            Row row = MarshallingService.parseRow(orderTable).get(0);
-            tableName = row.getTableName();
-            Insert.insert(List.of(row), database, database.getTableByName(tableName), true);
-        }
+        rows.forEach(row -> {
+            log.debug(Row.serialize(table, row.getColumnsToValues()));
+        });
+
+        Insert insert = new Insert(database, table, table.getRandomPartition());
+        insert.insert(rows);
 
         log.info("Seed: " + seed);
 
     }
 
-    static void setUpUseExisting(long seed) {
-        database = new Database(DB_ROOT, List.of(Order.class), seed);
+    static void setUpUseExisting() {
+        database = new Database(DB_ROOT, List.of(Order.class), List.of(Mode.INDEX_ALL), seed);
+    }
+
+    static List<Row> makeRows(long seed, int iterations) {
+        if (iterations <= 0)
+            return new ArrayList<>();
+
+        // make 1000 entries
+        Random random = new Random(seed);
+
+        return IntStream.range(0, iterations)
+            .mapToObj( i -> {
+                OffsetDateTime time = OffsetDateTime.now();
+                time = time.withYear(random.nextInt(2000, 2023));
+                time = time.withMonth(random.nextInt(1, 13));
+                time = time.withDayOfMonth(random.nextInt(1, 28));
+                time = time.withHour(random.nextInt(0, 24));
+                time = time.withMinute(random.nextInt(0, 60));
+                time = time.withSecond(random.nextInt(0, 60));
+                time = (random.nextBoolean())? time.withOffsetSameInstant(ZoneOffset.UTC) : time;
+//            time = time.withOffsetSameInstant(ZoneOffset.UTC);
+                Order orderTable = new Order(
+                    UUID.nameUUIDFromBytes(String.valueOf(seed + i).getBytes()).toString(),
+                    "This is a long description. A lot of tables could have something like this so this will be a good test.",
+                    BigDecimal.valueOf(Math.abs(random.nextLong(0, 100))),
+                    BigDecimal.valueOf(Math.abs(random.nextLong(0, 5))),
+                    time
+                );
+                return MarshallingService.parseRow(orderTable).get(0);
+            })
+            .toList();
     }
 
     @BeforeEach
     void setUp() throws IOException {
         Logger.setApplicationLogLevel(logLevel);
-        setUpWipeAndPopulate(-183502108378805369L);
+        setUpWipeAndPopulate();
 //        setUpUseExisting(0L);
     }
 
@@ -105,30 +117,20 @@ class OperationServiceTest {
 
         int INSERT_ITERATIONS = 1000;
 
-        Random random = new Random();
+        List<Row> rows = makeRows(seed + ITERATIONS, INSERT_ITERATIONS);
 
-        String tableName = "";
-        List<Row> rows = IntStream.range(0, INSERT_ITERATIONS)
-            .mapToObj( i -> {
-                Order orderTable = new Order(
-                    UUID.randomUUID().toString(),
-                    "This is a long description. A lot of tables could have something like this so this will be a good test to include this.",
-                    BigDecimal.valueOf(Math.abs(random.nextLong(0, 100))),
-                    BigDecimal.valueOf(Math.abs(random.nextLong(0, 5))),
-                    OffsetDateTime.now());
-                if (i > 10000 && i % 10000 == 0) {
-                    log.print(i + "/" + INSERT_ITERATIONS);
-                }
-                return MarshallingService.parseRow(orderTable).get(0);
-            })
-            .toList();
+        Table<?> table = database.getTableByName("Order");
 
-        tableName = rows.get(0).getTableName();
+        rows.forEach(row -> {
+            log.debug(Row.serialize(table, row.getColumnsToValues()));
+        });
+
+        Insert insert = new Insert(database, table, table.getRandomPartition());
+
         Timer timer = Timer.start();
-        Insert.insert(rows, database, database.getTableByName(tableName), true);
+        insert.insert(rows);
         timer.printRestart();
 
-        Table<?> table = database.getTableByName(tableName);
         long size = table.getSize(table.getRandomPartition());
 
         assertEquals(INSERT_ITERATIONS + ITERATIONS, size - 1);

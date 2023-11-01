@@ -6,9 +6,7 @@ import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
-import org.dava.core.database.service.objects.EmptiesPackage;
-import org.dava.core.database.service.objects.Empty;
-import org.dava.core.database.service.objects.IORunnable;
+import org.dava.core.database.service.objects.*;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
 import java.io.File;
@@ -22,15 +20,14 @@ import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static org.dava.common.Checks.safeCast;
-import static org.dava.core.database.objects.exception.ExceptionType.BASE_IO_ERROR;
-import static org.dava.core.database.objects.exception.ExceptionType.INDEX_CREATION_ERROR;
+import static org.dava.core.database.objects.exception.ExceptionType.*;
 
 /**
  * Class for actually modifying database files.
  */
 public class BaseOperationService {
 
-    private static int NUMERIC_PARTITION_SIZE = 1000000;
+    public static int NUMERIC_PARTITION_SIZE = 1000000;
 
 
 
@@ -64,61 +61,45 @@ public class BaseOperationService {
     /*
         Indices
      */
-    public static void addToIndex(String folderPath, Object value, List<IndexRoute> routes, String rollbackPath) {
+    public static void addToIndex(String folderPath, Object value, List<IndexWritePackage> indexWritePackages, boolean isUnique) {
         try {
+
             // make index file if it doesn't exist
+            // TODO make a little cache here to avoid this expensive operation
             if (!FileUtil.exists(folderPath)) {
                 FileUtil.createDirectoriesIfNotExist(folderPath);
             }
 
-            // TODO use empties rows for index as well
             // increment index count and write new routes in index
             String path = folderPath + "/" + value + ".index";
             long count = 0L;
             if (FileUtil.exists(path)) {
-                count = getCountForIndexPath(path);
+                if (isUnique) {
+                    throw new DavaException(UNIQUE_CONSTRAINT_VIOLATION, "Row already exists with unique value or key: " + value, null);
+                }
+                else {
+                    count = getCountForIndexPath(path);
+                }
             }
-            byte[] routeBytes = new byte[routes.size() * 10];
-            IntStream.range(0, routes.size())
-                    .forEach( i -> {
-                        int index = i * 10;
-                        byte[] bytes = routes.get(i).getRouteAsBytes();
-                        System.arraycopy(bytes, 0, routeBytes, index, 10);
-                    });
 
+            List<WritePackage> writes = (List<WritePackage>) (List<?>) indexWritePackages;
 
-            long finalCount = count;
-            StringBuilder rollback = new StringBuilder();
-            rollback.append("IC:")
-                .append(path)
-                .append(":")
-                .append(count)
-                .append(":")
-                .append(count)
-                .append(routes.size())
-                .append("\n");
-            routes.forEach( route ->
-                rollback.append("I:")
-                    .append(route.getOffsetInTable())
-                    .append(":")
-                    .append(route.getLengthInTable())
-            );
-
-            performOperation(
-                () -> {
-                    writeCountForIndexPath(path, finalCount + routes.size());
-                    FileUtil.writeBytesAppend(
-                        folderPath + "/" + value + ".index",
-                        routeBytes
-                    );
-                },
-                rollback.toString(),
-                rollbackPath
+            writes.add(
+                0,
+                new WritePackage(
+                    0L,
+                    TypeToByteUtil.longToByteArray(
+                        count + indexWritePackages.size()
+                    )
+                )
             );
 
 
-
-
+            // write indices to index (and also count)
+            FileUtil.writeBytes(
+                path,
+                writes
+            );
         } catch (IOException e) {
             throw new DavaException(
                 BASE_IO_ERROR,
@@ -156,7 +137,7 @@ public class BaseOperationService {
 
         return table.getPartitions().parallelStream()
             .flatMap(partition -> {
-                String path = Index.buildIndexPath(database.getRootDirectory(), tableName, partition, table.getColumn(columnName), value);
+                String path = Index.buildIndexPath(database.getRootDirectory(), tableName, partition, table.getColumn(columnName), table.getColumnLeaves().get(partition + columnName), value);
 
                 List<IndexRoute> lines = getRoutes(
                     path,
@@ -409,7 +390,7 @@ public class BaseOperationService {
 
         try {
             return FileUtil.readBytes(
-                table.getTablePath(partition) + ".csv",
+                table.getTablePath(partition),
                 rows.stream()
                     .map(IndexRoute::getOffsetInTable)
                     .toList(),
@@ -445,27 +426,7 @@ public class BaseOperationService {
 
     }
 
-    public static void writeCountForIndexPath(String path, long count) {
-        try {
-            FileUtil.writeBytes(
-                path,
-                0,
-                TypeToByteUtil.longToByteArray(
-                    count
-                )
-            );
-
-        } catch (IOException e) {
-            throw new DavaException(
-                BASE_IO_ERROR,
-                "Error writing index count in: " + path,
-                e
-            );
-        }
-
-    }
-
-    public static void updateNumericCountFile(String folderPath) {
+    public static void incrementNumericCountFile(String folderPath) {
         String countFile = folderPath + "/c.count";
         try {
             FileUtil.createDirectoriesIfNotExist(folderPath);
@@ -484,11 +445,18 @@ public class BaseOperationService {
 
     }
 
-    public static void repartitionIfNeeded(String folderPath, String rollbackPath) {
+    public static boolean repartitionIfNeeded(String folderPath, Map<String, Long> numericCounts) {
         try {
             String countFile = folderPath + "/c.count";
 
-            long count = getNumericCount(countFile);
+            long count;
+            if (numericCounts.containsKey(countFile)) {
+                count = numericCounts.get(countFile);
+            }
+            else {
+                count = getNumericCount(countFile);
+                numericCounts.put(countFile, count);
+            }
 
             if (count > NUMERIC_PARTITION_SIZE) {
 
@@ -502,44 +470,39 @@ public class BaseOperationService {
                     .sorted(BigDecimal::compareTo)
                     .toList();
                 BigDecimal median = samples.get(2);
+                FileUtil.createDirectoriesIfNotExist(folderPath + "/-" + median);
+                FileUtil.createDirectoriesIfNotExist(folderPath + "/+" + median);
 
-                performOperation(
-                    () -> {
-                        FileUtil.createDirectoriesIfNotExist(folderPath + "/-" + median);
-                        FileUtil.createDirectoriesIfNotExist(folderPath + "/+" + median);
+                List<File> lessThan = new ArrayList<>();
+                List<File> greaterThanOrEqual = new ArrayList<>();
+                Arrays.stream(files).forEach( file -> {
+                    String fileName = file.getName();
+                    if (fileName.contains(".index")) {
+                        if ( new BigDecimal(fileName.split("\\.")[0]).compareTo(median) < 0 ) {
+                            lessThan.add(file);
+                        }
+                        else {
+                            greaterThanOrEqual.add(file);
+                        }
+                    }
+                });
 
-                        List<File> lessThan = new ArrayList<>();
-                        List<File> greaterThanOrEqual = new ArrayList<>();
-                        Arrays.stream(files).forEach( file -> {
-                            String fileName = file.getName();
-                            if (fileName.contains(".index")) {
-                                if ( new BigDecimal(fileName.split("\\.")[0]).compareTo(median) < 0 ) {
-                                    lessThan.add(file);
-                                }
-                                else {
-                                    greaterThanOrEqual.add(file);
-                                }
-                            }
-                        });
+                FileUtil.moveFilesToDirectory(lessThan, folderPath + "/-" + median);
+                FileUtil.moveFilesToDirectory(greaterThanOrEqual, folderPath + "/+" + median);
 
-                        FileUtil.moveFilesToDirectory(lessThan, folderPath + "/-" + median);
-                        FileUtil.moveFilesToDirectory(greaterThanOrEqual, folderPath + "/+" + median);
+                FileUtil.createFile(folderPath + "/-" + median + "/c.count", TypeToByteUtil.longToByteArray(lessThan.size()) );
+                FileUtil.createFile(folderPath + "/+" + median + "/c.count", TypeToByteUtil.longToByteArray(greaterThanOrEqual.size()) );
 
-                        FileUtil.createFile(folderPath + "/-" + median + "/c.count", TypeToByteUtil.longToByteArray(lessThan.size()) );
-                        FileUtil.createFile(folderPath + "/+" + median + "/c.count", TypeToByteUtil.longToByteArray(greaterThanOrEqual.size()) );
-
-                        FileUtil.deleteFile(countFile);
-                    },
-                    "P:" + folderPath + "/-" + median,
-                    rollbackPath
-                );
+                FileUtil.deleteFile(countFile);
+                return true;
             }
         } catch (IOException e) {
             throw new DavaException(INDEX_CREATION_ERROR, "Repartition of numerical index failed: " + folderPath, e);
         }
+        return false;
     }
 
-    private static long getNumericCount(String countFile) throws IOException {
+    public static long getNumericCount(String countFile) throws IOException {
         byte[] countBytes = FileUtil.readBytes(countFile, 0, 8);
         return (countBytes == null)? 0L :
             TypeToByteUtil.byteArrayToLong(
@@ -550,37 +513,21 @@ public class BaseOperationService {
 
 
 
+
     /*
         Table meta data
      */
 
-    public static void popRoutes(String rollbackPath, String emptiesFile, List<Empty> emptiesPackages) throws IOException {
+    public static void popRoutes(String emptiesFile, List<Empty> emptiesPackages) throws IOException {
 
         if (emptiesPackages.isEmpty())
             return;
-
-
-        StringBuilder rollbackString = new StringBuilder();
-        emptiesPackages.forEach( emptiesPackage ->
-            rollbackString.append("E:")
-                .append(emptiesPackage.getStartByte())
-                .append(",")
-                .append(emptiesPackage.getRoute().getOffsetInTable())
-                .append(",")
-                .append(emptiesPackage.getRoute().getLengthInTable())
-                .append("\n")
-        );
 
         List<Long> startBytes = emptiesPackages.stream()
             .map(Empty::getStartByte)
             .toList();
 
-
-        BaseOperationService.performOperation(
-            () -> FileUtil.popBytes(emptiesFile, 10, startBytes),
-            rollbackString.toString(),
-            rollbackPath
-        );
+        FileUtil.popBytes(emptiesFile, 10, startBytes);
     }
 
     /**
@@ -589,10 +536,10 @@ public class BaseOperationService {
      * doesn't delete any routes, just retrieves
      */
     public static EmptiesPackage getEmpties(Integer emptiesToGet, String emptiesFile, Random random) throws IOException {
-
+        // TODO don't check for empties every time to avoid this costly file access
         long fileSize = FileUtil.fileSize(emptiesFile);
-        if ( fileSize - 10 >= 8) {
-            return new EmptiesPackage();
+        if ( fileSize - 10 <= 8) {
+            return null;
         }
 
         Set<Long> startBytes = new HashSet<>();

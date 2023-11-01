@@ -7,6 +7,7 @@ import java.lang.reflect.Type;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.dava.core.database.objects.exception.ExceptionType.MISSING_TABLE;
 import static org.dava.core.database.objects.exception.ExceptionType.NOT_A_TABLE;
@@ -18,11 +19,12 @@ public class Database {
     private Map<String, Table<?>> tables;
 
 
-    public Database(String rootDirectory, List<Class<?>> tableClasses, long seed) {
+    public Database(String rootDirectory, List<Class<?>> tableClasses, List<Mode> tableModes, long seed) {
         this.rootDirectory = rootDirectory;
-        this.tables = tableClasses.stream()
-            .map(classT -> new Table<>(classT, rootDirectory, seed))
+        this.tables = IntStream.range(0, tableClasses.size())
+            .mapToObj(i -> new Table<>(tableClasses.get(i), rootDirectory, tableModes.get(i), seed))
             .collect(Collectors.toMap(Table::getTableName, obj -> obj));
+
     }
 
 

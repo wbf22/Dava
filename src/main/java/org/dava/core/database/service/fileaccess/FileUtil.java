@@ -1,6 +1,7 @@
 package org.dava.core.database.service.fileaccess;
 
 import org.dava.core.database.service.objects.RowWritePackage;
+import org.dava.core.database.service.objects.WritePackage;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -129,17 +130,21 @@ public class FileUtil {
         }
     }
 
-    public static void writeBytes(String filePath, List<RowWritePackage> writePackages) throws IOException {
+    /**
+     * writes the writePackages.
+     *
+     * Also updates null offsets in packages to the end of the table at insert
+     */
+    public static void writeBytes(String filePath, List<WritePackage> writePackages) throws IOException {
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
-            writePackages.parallelStream()
-                .forEach( writePackage -> {
+            writePackages.forEach( writePackage -> {
                     try {
                         // Move to the desired position in the file
-                        long offset = (writePackage.getRoute().getOffsetInTable() == null)? file.length() : writePackage.getRoute().getOffsetInTable();
-                        file.seek(writePackage.getRoute().getOffsetInTable());
+                        long offset = (writePackage.getOffsetInTable() == null)? file.length() : writePackage.getOffsetInTable();
+                        file.seek(offset);
 
                         // Write data at the current position
-                        file.write( writePackage.getDataAsBytes() );
+                        file.write( writePackage.getData() );
 
                     } catch (IOException e) {
                         throw new RuntimeException(e);
@@ -167,6 +172,11 @@ public class FileUtil {
             file.setLength( 0 );
             file.write(data);
         }
+    }
+
+    public static void createParentFolderIfNotExist(String filePath) throws IOException {
+        Path path = Paths.get(filePath);
+        Files.createDirectories(path.getParent());
     }
 
     public static void createDirectoriesIfNotExist(String directoryPath) throws IOException {
@@ -225,6 +235,48 @@ public class FileUtil {
                 .toList();
         }
         return new ArrayList<>();
+    }
+
+    public static List<File> getLeafFolders(String directory) {
+        List<File> leaves = new ArrayList<>();
+
+        List<File> files = List.of(new File(directory));
+        do {
+            files = files.parallelStream()
+                .flatMap( file -> {
+                    List<File> subFiles = Arrays.stream(file.listFiles())
+                        .filter(File::isDirectory)
+                        .toList();
+                    if (subFiles.isEmpty()) {
+                        leaves.add(file);
+                    }
+                    return subFiles.stream();
+                })
+                .toList();
+
+        } while (!files.isEmpty());
+
+        return leaves;
+    }
+
+    public static List<File> getSubFoldersRecursive(String directory) {
+
+        List<File> newFiles = Arrays.stream(new File(directory).listFiles())
+            .filter(File::isDirectory)
+            .toList();
+
+        List<File> files = new ArrayList<>(newFiles);
+
+        while(!newFiles.isEmpty()) {
+            newFiles = newFiles.parallelStream()
+                .flatMap(file -> Arrays.stream(file.listFiles()))
+                .filter(File::isDirectory)
+                .toList();
+
+            files.addAll(newFiles);
+        }
+
+        return files;
     }
 
     public static boolean exists(String filePath) {

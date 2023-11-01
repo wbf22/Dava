@@ -1,22 +1,27 @@
 package org.dava.core.database.service.objects;
 
+import org.dava.core.database.objects.database.structure.Column;
 import org.dava.core.database.objects.database.structure.IndexRoute;
 
 import java.io.Serializable;
 
-public class IndexWritePackage {
+public class IndexWritePackage extends WritePackage {
 
     private IndexRoute route;
     private Empty locationInIndex;
-    private Class<?> columnType;
+    private Column<?> column;
     private Object value;
     private String folderPath;
 
 
-    public IndexWritePackage(IndexRoute route, Empty locationInIndex, Class<?> columnType, Object value, String folderPath) {
+    public IndexWritePackage(IndexRoute route, Empty locationInIndex, Column<?> column, Object value, String folderPath) {
+        super(
+            (locationInIndex == null)? null :locationInIndex.getRoute().getOffsetInTable(),
+            route.getRouteAsBytes()
+        );
         this.route = route;
         this.locationInIndex = locationInIndex;
-        this.columnType = columnType;
+        this.column = column;
         this.value = value;
         this.folderPath = folderPath;
     }
@@ -29,12 +34,16 @@ public class IndexWritePackage {
         return route;
     }
 
-    public Empty getLocationInIndex() {
-        return locationInIndex;
+    public Column<?> getColumn() {
+        return column;
+    }
+
+    public String getColumnName() {
+        return column.getName();
     }
 
     public Class<?> getColumnType() {
-        return columnType;
+        return column.getType();
     }
 
     public Object getValue() {
