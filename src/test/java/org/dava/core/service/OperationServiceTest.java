@@ -36,6 +36,7 @@ class OperationServiceTest {
     static int ITERATIONS = 1000;
     static Level logLevel = Level.INFO;
 //    static String DB_ROOT = "/Users/brandon.fowler/Desktop/db";
+    static Mode TABLE_MODE = Mode.LIGHT;
     static String DB_ROOT = "db";
     static Long seed = -183502108378805369L;
     private static final Logger log = Logger.getLogger(OperationServiceTest.class.getName());
@@ -54,7 +55,7 @@ class OperationServiceTest {
         List<Row> rows = makeRows(seed, ITERATIONS);
 
         rows.forEach(row -> {
-            log.debug(Row.serialize(table, row.getColumnsToValues()));
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
 
         Insert insert = new Insert(database, table, table.getRandomPartition());
@@ -65,7 +66,7 @@ class OperationServiceTest {
     }
 
     static void setUpUseExisting() {
-        database = new Database(DB_ROOT, List.of(Order.class), List.of(Mode.INDEX_ALL), seed);
+        database = new Database(DB_ROOT, List.of(Order.class), List.of(TABLE_MODE), seed);
     }
 
     static List<Row> makeRows(long seed, int iterations) {
@@ -104,6 +105,7 @@ class OperationServiceTest {
         setUpWipeAndPopulate();
 //        setUpUseExisting(0L);
     }
+
 
 
     @Test
@@ -148,7 +150,7 @@ class OperationServiceTest {
             log.debug(route.toString());
 
             String row = BaseOperationService
-                .getLinesFromPartition(partition, table, List.of(route) )
+                .getLinesUsingRoutes(partition, table, List.of(route) )
                 .collect(Collectors.joining("\n"));
             log.debug(row);
         });

@@ -1,16 +1,13 @@
 package org.dava.core.sql.objects.conditions;
 
 
-import org.dava.common.Functions;
 import org.dava.common.ListUtil;
 import org.dava.core.database.objects.database.structure.Database;
 import org.dava.core.database.objects.database.structure.Row;
-import org.dava.core.database.service.BaseOperationService;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiFunction;
-import java.util.function.Function;
 
 public interface Condition {
 
@@ -18,7 +15,7 @@ public interface Condition {
 
     List<Row> retrieve(Database database, List<Condition> parentFilters, String from, Long limit, Long offset);
 
-    Long getCount(Database database, String from);
+    Long getCountEstimate(Database database, String from); // could return real count. but types some like dates give estimate
 
 
     default List<Row> getRowsLimited(
@@ -33,8 +30,11 @@ public interface Condition {
         offset = (offset == null)? 0 : offset;
 
         List<Row> rows = new ArrayList<>();
-        long startRow = offset;
-        long rowsPerIteration = (long) (limit * (1.1 + .2 * parentFilters.size()));
+        long startRow = 0;
+        // get rows based off limit + plus some. More if there are lots of parent filters. Then divide by number of partitions
+        long rowsPerIteration = (long) (limit * (1.1 + .2 * parentFilters.size())) / database.getTableByName(from).getPartitions().size();
+        rowsPerIteration = (rowsPerIteration == 0)? 1 : rowsPerIteration;
+
         boolean done = false;
         while (!done) {
             List<Row> retrieved = functionToGetRows.apply(startRow, startRow + rowsPerIteration);
@@ -45,9 +45,21 @@ public interface Condition {
                     .toList();
             startRow += size;
             rows.addAll(retrieved);
-            done = (rows.size() >= limit) || size < rowsPerIteration;
+            done = (rows.size() >= limit + offset) || size < rowsPerIteration;
         }
-        return (rows.size() > limit)? ListUtil.limit(rows, limit) : rows;
+
+        return limit(rows, limit, offset);
+    }
+
+    default List<Row> limit(List<Row> rows, long limit, long offset) {
+        if (rows.size() > limit + offset) {
+            return rows.subList(Math.toIntExact(offset), Math.toIntExact(limit));
+        }
+        else {
+            if (offset > rows.size())
+                return new ArrayList<>();
+            return rows.subList(Math.toIntExact(offset), rows.size());
+        }
     }
 
 }

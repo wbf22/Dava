@@ -57,10 +57,11 @@ public class FileUtil {
         return (bytes != null)? new String(bytes, StandardCharsets.UTF_8) : null;
     }
 
-    public static byte[] readBytes(String filePath, long startByte, int numBytes) throws IOException {
+    public static byte[] readBytes(String filePath, long startByte, Integer numBytes) throws IOException {
         try (RandomAccessFile raf = new RandomAccessFile(filePath, "r")) {
             raf.seek(startByte); // Set the file pointer to the desired position
 
+            numBytes = (numBytes == null)? (int) raf.length() : numBytes;
             byte[] buffer = new byte[numBytes];
             int bytesRead = raf.read(buffer); // Read the specified number of bytes
 

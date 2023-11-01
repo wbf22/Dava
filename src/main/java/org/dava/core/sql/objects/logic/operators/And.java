@@ -5,8 +5,6 @@ import org.dava.core.database.objects.database.structure.Row;
 import org.dava.core.sql.objects.conditions.Condition;
 
 import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
 
 public class And implements Condition, Operator{
 
@@ -37,14 +35,14 @@ public class And implements Condition, Operator{
     }
 
     private Condition findMostRestrictingCondition(Database database, String from) {
-        Long leftCount = leftCondition.getCount(database, from);
-        Long rightCount = rightCondition.getCount(database, from);
-        Condition mostRestrictingCondition = null;
+        Long leftCount = leftCondition.getCountEstimate(database, from);
+        Long rightCount = rightCondition.getCountEstimate(database, from);
+        Condition mostRestrictingCondition;
         if (leftCount != null && rightCount != null) {
             mostRestrictingCondition = (leftCount <= rightCount)? leftCondition : rightCondition;
         }
         else if (leftCount == null && rightCount == null){
-            mostRestrictingCondition = null;
+            mostRestrictingCondition = leftCondition;
         }
         else {
             mostRestrictingCondition = (leftCount != null)? leftCondition : rightCondition;
@@ -55,9 +53,9 @@ public class And implements Condition, Operator{
 
 
     @Override
-    public Long getCount(Database database, String from) {
-        Long leftCount = leftCondition.getCount(database, from);
-        Long rightCount = rightCondition.getCount(database, from);
+    public Long getCountEstimate(Database database, String from) {
+        Long leftCount = leftCondition.getCountEstimate(database, from);
+        Long rightCount = rightCondition.getCountEstimate(database, from);
         if (leftCount != null && rightCount != null) {
             return (leftCount <= rightCount)? leftCount : rightCount;
         }

@@ -1,10 +1,8 @@
 package org.dava.core.sql.objects.conditions;
 
-import org.dava.common.ListUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.service.BaseOperationService;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import static org.dava.core.database.service.BaseOperationService.getCountForIndexPath;
@@ -35,7 +33,7 @@ public class Equals implements Condition {
         List<Row> rows;
         if (limit == null && offset == null) {
             Table<?> table = database.getTableByName(from);
-            rows = database.getTableByName(from).getPartitions().stream()
+            rows = database.getTableByName(from).getPartitions().parallelStream()
                     .flatMap(partition -> {
                         String indexPath = Index.buildIndexPath(database.getRootDirectory(), from, partition, table.getColumn(column), table.getColumnLeaves().get(partition + column), value);
                         return BaseOperationService.getAllRowsFromIndex(indexPath, partition, database, from).stream()
@@ -50,7 +48,7 @@ public class Equals implements Condition {
                     from,
                     limit,
                     offset,
-                    (startRow, rowsPerIteration) -> BaseOperationService.getRowsFromIndex(
+                    (startRow, rowsPerIteration) -> BaseOperationService.getRowsFromTable(
                             database,
                             from,
                             column,
@@ -65,16 +63,21 @@ public class Equals implements Condition {
     }
 
     @Override
-    public Long getCount(Database database, String from) {
+    public Long getCountEstimate(Database database, String from) {
         Table<?> table = database.getTableByName(from);
-        return table.getPartitions().stream()
-            .map(partition ->
-                getCountForIndexPath(
-                    Index.buildIndexPath(database.getRootDirectory(), from, partition, table.getColumn(column), table.getColumnLeaves().get(partition + column), value)
+        Column<?> columnObj = table.getColumn(column);
+        if (columnObj.isIndexed()) {
+            return table.getPartitions().parallelStream()
+                .map(partition ->
+                         getCountForIndexPath(
+                             Index.buildIndexPath(database.getRootDirectory(), from, partition, table.getColumn(column), table.getColumnLeaves().get(partition + column), value)
+                         )
                 )
-            )
-            .reduce(Long::sum)
-            .orElse(null);
-
+                .reduce(Long::sum)
+                .orElse(null);
+        }
+        else {
+            return null;
+        }
     }
 }

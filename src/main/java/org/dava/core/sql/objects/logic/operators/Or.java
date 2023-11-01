@@ -29,7 +29,12 @@ public class Or implements Condition, Operator {
     }
 
     @Override
-    public Long getCount(Database database, String from) {
+    public Long getCountEstimate(Database database, String from) {
+        Long leftCount = leftCondition.getCountEstimate(database, from);
+        Long rightCount = rightCondition.getCountEstimate(database, from);
+
+        if (leftCount != null && rightCount != null)
+            return leftCount + rightCount;
         return null;
     }
 }
