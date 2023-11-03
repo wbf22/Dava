@@ -36,7 +36,7 @@ class OperationServiceTest {
     static int ITERATIONS = 1000;
     static Level logLevel = Level.INFO;
 //    static String DB_ROOT = "/Users/brandon.fowler/Desktop/db";
-    static Mode TABLE_MODE = Mode.LIGHT;
+    static Mode TABLE_MODE = Mode.INDEX_ALL;
     static String DB_ROOT = "db";
     static Long seed = -183502108378805369L;
     private static final Logger log = Logger.getLogger(OperationServiceTest.class.getName());
@@ -139,26 +139,6 @@ class OperationServiceTest {
     }
 
     @Test
-    void getIndices() {
-        Table<?> table = database.getTableByName("Order");
-        String partition = table.getRandomPartition();
-
-        String indexPath = "db/Order/indecis_Order/total/0.index";
-        List<IndexRoute> indices = BaseOperationService.getRoutes(indexPath, partition, 8L, null);
-
-        indices.forEach( route -> {
-            log.debug(route.toString());
-
-            String row = BaseOperationService
-                .getLinesUsingRoutes(partition, table, List.of(route) )
-                .collect(Collectors.joining("\n"));
-            log.debug(row);
-        });
-
-        log.debug("Total Rows: " + indices.size());
-    }
-
-    @Test
     void equals() throws IOException {
 
         Timer timer = Timer.start();
@@ -251,6 +231,27 @@ class OperationServiceTest {
                     safeCast(row.getValue("time"), OffsetDate.class).isBefore(date)
             );
         });
+    }
+
+    @Test
+    void getIndices() {
+        Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+
+        String indexPath = "db/Order/indecis_Order/total/0.index";
+        List<IndexRoute> indices = BaseOperationService.getRoutes(indexPath, partition, 8L, null).getSecond();
+
+        indices.forEach( route -> {
+            log.debug(route.toString());
+
+            String row = String.join(
+                "\n",
+                BaseOperationService.getLinesUsingRoutes(partition, table, List.of(route))
+            );
+            log.debug(row);
+        });
+
+        log.debug("Total Rows: " + indices.size());
     }
 
     @Test

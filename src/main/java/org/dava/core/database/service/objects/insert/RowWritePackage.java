@@ -1,7 +1,8 @@
-package org.dava.core.database.service.objects;
+package org.dava.core.database.service.objects.insert;
 
 import org.dava.core.database.objects.database.structure.IndexRoute;
 import org.dava.core.database.objects.database.structure.Row;
+import org.dava.core.database.service.objects.WritePackage;
 
 import java.io.Serializable;
 import java.util.Arrays;

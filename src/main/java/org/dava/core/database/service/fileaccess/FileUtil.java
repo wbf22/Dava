@@ -1,6 +1,5 @@
 package org.dava.core.database.service.fileaccess;
 
-import org.dava.core.database.service.objects.RowWritePackage;
 import org.dava.core.database.service.objects.WritePackage;
 
 import java.io.*;
@@ -8,7 +7,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
-import java.util.stream.IntStream;
 
 public class FileUtil {
 
@@ -233,6 +231,16 @@ public class FileUtil {
         if (files != null && files.length > 0) {
             return Arrays.stream(files)
                 .filter(File::isDirectory)
+                .toList();
+        }
+        return new ArrayList<>();
+    }
+
+    public static List<File> getSubFiles(String path) {
+        File[] files = FileUtil.listFiles(path);
+        if (files != null && files.length > 0) {
+            return Arrays.stream(files)
+                .filter(File::isFile)
                 .toList();
         }
         return new ArrayList<>();

@@ -2,11 +2,13 @@ package org.dava.core.database.service;
 
 
 import org.dava.common.ArrayUtil;
+import org.dava.common.Bundle;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.objects.*;
+import org.dava.core.database.service.objects.insert.IndexWritePackage;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
 import java.io.File;
@@ -31,32 +33,6 @@ public class BaseOperationService {
     public static int NUMERIC_PARTITION_SIZE = 1000000;
 
 
-
-
-    public static boolean update(Row row, IndexRoute primaryKeyRoute, Table<?> table) {
-        // delete row and indices.
-
-        // insert row again
-
-        return true;
-    }
-
-    public static boolean delete(Row row, IndexRoute primaryKeyRoute, Table<?> table) {
-        // delete row and indices.
-
-        // insert row again
-
-        return true;
-    }
-
-    public static void performOperation(IORunnable operation, String rollbackData, String rollbackPath) throws IOException {
-
-        // write the rollback information (so it can be rolled back if this or later calls fail)
-        FileUtil.writeBytesAppend(rollbackPath, rollbackData.getBytes());
-
-        // run the write operation
-        operation.run();
-    }
 
 
     /*
@@ -85,6 +61,7 @@ public class BaseOperationService {
 
             List<WritePackage> writes = (List<WritePackage>) (List<?>) indexWritePackages;
 
+            // write new count, first 8 bytes
             writes.add(
                 0,
                 new WritePackage(
@@ -113,15 +90,17 @@ public class BaseOperationService {
     public static List<Row> getAllRowsFromIndex(String indexPath, String partition, Database database, String tableName) {
         Table<?> table = database.getTableByName(tableName);
 
-        List<IndexRoute> lines = getRoutes(
+        List<IndexRoute> routes = getRoutes(
                 indexPath,
                 partition,
                 8L,
                 null
-        );
+        ).getSecond();
 
-        return getLinesUsingRoutes(partition, table, lines )
-            .map(line -> new Row(line, table))
+        List<String> lines = getLinesUsingRoutes(partition, table, routes);
+
+        return IntStream.range(0, lines.size())
+            .mapToObj(i -> new Row(lines.get(i), table, routes.get(i)))
             .toList();
     }
 
@@ -137,17 +116,19 @@ public class BaseOperationService {
         if (column.isIndexed()) {
             return table.getPartitions().parallelStream()
                 .flatMap(partition -> {
-                    String path = Index.buildIndexPath(database.getRootDirectory(), tableName, partition, column, table.getColumnLeaves().get(partition + columnName), value);
+                    String path = Index.buildIndexPath(database.getRootDirectory(), tableName, partition, column, table.getLeafList(partition, columnName), value);
 
-                    List<IndexRoute> lines = getRoutes(
+                    List<IndexRoute> routes = getRoutes(
                         path,
                         partition,
                         8 + startRow * 10,
                         (int) (endRow * 10)
-                    );
+                    ).getSecond();
 
-                    return getLinesUsingRoutes(partition, table, lines)
-                        .map(line -> new Row(line, table));
+                    List<String> lines = getLinesUsingRoutes(partition, table, routes);
+
+                    return IntStream.range(0, lines.size())
+                        .mapToObj(i -> new Row(lines.get(i), table, routes.get(i)));
                 })
                 .toList();
         }
@@ -190,7 +171,7 @@ public class BaseOperationService {
             int index = 1; // +1 for header line of table
             List<Row> rows = new ArrayList<>();
             while ( rows.size() < end && index < tableRows.size() ) {
-                Row row = new Row(tableRows.get(index), table);
+                Row row = new Row(tableRows.get(index), table, null);
                 if (filter.test(row))
                     rows.add(row);
                 index++;
@@ -445,7 +426,7 @@ public class BaseOperationService {
      * Gets IndexRoutes from a file from startByte to numBytes or the end of the file (whichever comes first).
      * If allLines is true then startByte and numBytes are ignored
      */
-    public static List<IndexRoute> getRoutes(String filePath, String partition, Long startByte, Integer numBytes) {
+    public static Bundle<Long, List<IndexRoute>> getRoutes(String filePath, String partition, Long startByte, Integer numBytes) {
         try {
 
             byte[] bytes;
@@ -455,11 +436,14 @@ public class BaseOperationService {
             );
             bytes = (startByte > fileSize)? null : FileUtil.readBytes(filePath, startByte, numBytes);
             if (bytes == null)
-                return new ArrayList<>();
+                return new Bundle<>(fileSize, new ArrayList<>());
 
-            return IndexRoute.parseBytes(
-                bytes,
-                partition
+            return new Bundle<>(
+                fileSize,
+                IndexRoute.parseBytes(
+                    bytes,
+                    partition
+                )
             );
         } catch (IOException e) {
             throw new DavaException(
@@ -470,7 +454,7 @@ public class BaseOperationService {
         }
     }
 
-    public static Stream<String> getLinesUsingRoutes(String partition, Table<?> table, List<IndexRoute> rows) {
+    public static List<String> getLinesUsingRoutes(String partition, Table<?> table, List<IndexRoute> rows) {
 
         try {
             return FileUtil.readBytes(
@@ -484,7 +468,8 @@ public class BaseOperationService {
                     .toList()
             )
             .stream()
-            .map(bytes -> new String((byte[]) bytes, StandardCharsets.UTF_8) );
+            .map(bytes -> new String((byte[]) bytes, StandardCharsets.UTF_8) )
+            .toList();
         } catch (IOException e) {
             throw new DavaException(
                 BASE_IO_ERROR,
@@ -561,7 +546,7 @@ public class BaseOperationService {
                 List<File> greaterThanOrEqual = new ArrayList<>();
                 Arrays.stream(files).forEach( file -> {
                     String fileName = file.getName();
-                    if (fileName.contains(".index")) {
+                    if ( !fileName.contains(".count") ) { // looking at .index files and their respective .empties files
                         if ( new BigDecimal(fileName.split("\\.")[0]).compareTo(median) < 0 ) {
                             lessThan.add(file);
                         }

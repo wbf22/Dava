@@ -12,10 +12,13 @@ import static org.dava.core.database.objects.exception.ExceptionType.CORRUPTED_R
 public class Row {
     private Map<String, Object> columnsToValues;
     private String tableName;
+    private IndexRoute locationInTable;
 
 
-    public Row(String line, Table<?> table) {
+
+    public Row(String line, Table<?> table, IndexRoute locationInTable) {
         try {
+            this.locationInTable = locationInTable;
             line = line.trim();
             String[] values = line.split(",");
             columnsToValues = new HashMap<>();
@@ -75,5 +78,9 @@ public class Row {
 
     public void setTableName(String tableName) {
         this.tableName = tableName;
+    }
+
+    public IndexRoute getLocationInTable() {
+        return locationInTable;
     }
 }

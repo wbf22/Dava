@@ -90,7 +90,7 @@ public class Index {
     }
 
     public static String buildColumnPath(String databaseRoot, String tableName, String partition, String columnName) {
-        return databaseRoot + "/" + tableName + "/indices_" + partition + "/" + columnName;
+        return databaseRoot + "/" + tableName + "/META_" + partition + "/" + columnName;
     }
 
 }

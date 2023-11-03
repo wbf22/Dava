@@ -100,18 +100,22 @@ If 'limit' or 'offset' is used, then the operation goes until the offset and lim
 
 Here are the different modes for indices
 
-- default
+- INDEX_ALL
     + Indices are made for every column
-- storage-sensitive
-    + Every time a query is performed, an index is saved
-- manual
+- STORAGE_SENSITIVE
+    + Every time a query is performed on a column it will be indexed
+- MANUAL
     + Indices are only created on primary key and marked columns
-- light
+- LIGHT
     + No indices or table meta files are maintained ( ideal for small tables / need to manually modify csv file )
 
 
 
 Tables can be converted between modes, but this conversion can take a long time if the table is very large and lots of indices need to be created. 
+
+LIGHT is the only mode you can safely modify the table .csv file and not break anything. 
+
+MANUAL is the ideal mode 
 
 <details>
 <summary>How it Works</summary>

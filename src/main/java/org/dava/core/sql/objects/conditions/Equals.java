@@ -35,7 +35,7 @@ public class Equals implements Condition {
             Table<?> table = database.getTableByName(from);
             rows = database.getTableByName(from).getPartitions().parallelStream()
                     .flatMap(partition -> {
-                        String indexPath = Index.buildIndexPath(database.getRootDirectory(), from, partition, table.getColumn(column), table.getColumnLeaves().get(partition + column), value);
+                        String indexPath = Index.buildIndexPath(database.getRootDirectory(), from, partition, table.getColumn(column), table.getLeafList(partition, column), value);
                         return BaseOperationService.getAllRowsFromIndex(indexPath, partition, database, from).stream()
                                 .filter(row -> parentFilters.parallelStream().allMatch(condition -> condition.filter(row)));
                     })
@@ -70,7 +70,7 @@ public class Equals implements Condition {
             return table.getPartitions().parallelStream()
                 .map(partition ->
                          getCountForIndexPath(
-                             Index.buildIndexPath(database.getRootDirectory(), from, partition, table.getColumn(column), table.getColumnLeaves().get(partition + column), value)
+                             Index.buildIndexPath(database.getRootDirectory(), from, partition, table.getColumn(column), table.getLeafList(partition, column), value)
                          )
                 )
                 .reduce(Long::sum)

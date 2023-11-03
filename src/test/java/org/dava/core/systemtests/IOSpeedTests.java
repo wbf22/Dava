@@ -1,20 +1,18 @@
 package org.dava.core.systemtests;
 
 import org.dava.common.Timer;
-import org.dava.core.database.objects.database.structure.IndexRoute;
-import org.dava.core.database.objects.database.structure.Row;
-import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.service.fileaccess.FileUtil;
-import org.dava.core.database.service.objects.IndexWritePackage;
-import org.dava.core.database.service.objects.RowWritePackage;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 import org.junit.jupiter.api.Test;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDate;
+import java.nio.file.Paths;
 import java.util.*;
+import java.util.stream.StreamSupport;
 
 class IOSpeedTests {
     /**
@@ -37,6 +35,7 @@ class IOSpeedTests {
      *  - jumping (seek) within a file is just as costly as opening new files to write
      *  - writing an object to file with java serialization can be pretty slow, 16ms. Reading is 3ms. ToString and writing
      *    as bytes is 7ms
+     *  - reading count file is much faster than list sub files
      */
 
 
@@ -623,7 +622,6 @@ class IOSpeedTests {
 
     }
 
-
     @Test
     void listSubfolders_vs_readLarge() throws IOException {
         /*
@@ -697,6 +695,77 @@ class IOSpeedTests {
         timer = Timer.start();
         byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index", 0L, file.length);
         timer.printRestart("reading directories from file");
+
+    }
+
+    @Test
+    void listSubfolders_vs_readCountFile() throws IOException {
+        /*
+            TEST RESULTS (iterations 100) getting 1000 subFiles in dir:
+                reading count file: 1
+                sub folders: 468
+                sub folders 2: 67
+                sub folders 3: 58
+
+            reading sub folders is faster
+         */
+
+
+        int ITERATIONS = 100;
+
+        File directory = new File("one_rows");
+        directory.mkdirs();
+        byte[] file = new byte[8];
+        FileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
+        int fileSize = Math.toIntExact(FileUtil.fileSize("one_rows/all_lines_index.index"));
+
+
+        long time = System.currentTimeMillis();
+        for (int i = 0; i < ITERATIONS; i++) {
+            byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index", 0L, 8);
+        }
+        System.out.print("reading count file: ");
+        System.out.println(System.currentTimeMillis() - time);
+
+
+
+        time = System.currentTimeMillis();
+        for (int i = 0; i < ITERATIONS; i++) {
+            FileUtil.getSubFiles("db/Order/META_Order/orderId").size();
+//            System.out.print("");
+        }
+        System.out.print("sub folders: ");
+        System.out.println(System.currentTimeMillis() - time);
+
+
+
+
+        time = System.currentTimeMillis();
+        for (int i = 0; i < ITERATIONS; i++) {
+            long fileCount = Files.list(Paths.get("db/Order/META_Order/orderId")).count();
+//            System.out.print("");
+        }
+        System.out.print("sub folders 2: ");
+        System.out.println(System.currentTimeMillis() - time);
+
+
+
+
+        time = System.currentTimeMillis();
+        for (int i = 0; i < ITERATIONS; i++) {
+            Path dir = Paths.get("db/Order/META_Order/orderId");
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
+//                long count = StreamSupport.stream( stream.spliterator(), true ).count();
+//                long count = stream.spliterator().estimateSize();
+//                System.out.println(count);
+                int count = 0;
+                for (Path entry : stream) {
+                    count++;
+                }
+            }
+        }
+        System.out.print("sub folders 3: ");
+        System.out.println(System.currentTimeMillis() - time);
 
     }
 

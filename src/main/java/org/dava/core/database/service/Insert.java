@@ -2,12 +2,14 @@ package org.dava.core.database.service;
 
 import org.dava.common.HashUtil;
 import org.dava.common.TypeUtil;
-import org.dava.common.logger.Logger;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.objects.*;
+import org.dava.core.database.service.objects.insert.Batch;
+import org.dava.core.database.service.objects.insert.IndexWritePackage;
+import org.dava.core.database.service.objects.insert.RowWritePackage;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -37,7 +39,7 @@ public class Insert {
     }
 
 
-    public boolean insert(List<Row> rows) {
+    public void insert(List<Row> rows) {
 
         this.rowEmpties = table.getEmptyRows(partition, rows.size());
 
@@ -57,11 +59,10 @@ public class Insert {
 
         // perform insert
         performInsert(writeBatch);
-
-        return true;
     }
 
     private List<String> determineNumericPartitions(Batch writeBatch) {
+        // TODO decide if this is necessary. It might be fine to not rollback these, no significant cost
         List<String> indexRepartitions = new ArrayList<>();
         writeBatch.getIndexWriteGroups()
             .forEach( (indexPath, writeGroup) -> {
@@ -184,7 +185,7 @@ public class Insert {
                             table.getTableName(),
                             partition,
                             table.getColumn(columnValue.getKey()),
-                            table.getColumnLeaves().get(partition + columnValue.getKey()),
+                            table.getLeafList(partition, columnValue.getKey()),
                             columnValue.getValue()
                         );
 
@@ -205,8 +206,10 @@ public class Insert {
                                         folderPath + "/" + value + ".empties",
                                         table.getRandom()
                                     );
-                                    if (emptiesPackage != null)
+                                    if (emptiesPackage != null) {
                                         indexEmpties.put(indexPath, emptiesPackage);
+                                        indexEmpty = emptiesPackage.getEmptyRemember(10);
+                                    }
                                 } catch (IOException e) {
                                     throw new DavaException(INDEX_READ_ERROR, "Error getting empties for index: " + indexPath,  e);
                                 }

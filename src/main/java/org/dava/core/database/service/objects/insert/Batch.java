@@ -1,4 +1,6 @@
-package org.dava.core.database.service.objects;
+package org.dava.core.database.service.objects.insert;
+
+import org.dava.core.database.service.objects.EmptiesPackage;
 
 import java.util.ArrayList;
 import java.util.HashMap;

@@ -221,7 +221,7 @@ public class Table<T> {
         return directory + "/META_" + partition;
     }
     public String emptiesFilePath(String partition) {
-        return directory + "/indices_" + partition + "/" + partition + ".empties";
+        return indicesFolder(partition) + "/" + partition + ".empties";
     }
 
     /**
@@ -280,6 +280,10 @@ public class Table<T> {
         return indicesFolder(partition) + "/" + partition + ".rollback";
     }
 
+    public List<File> getLeafList(String partition, String columnName) {
+        return columnLeaves.get(partition + columnName);
+    }
+
 
 
     /*
@@ -308,4 +312,6 @@ public class Table<T> {
     public Map<String, List<File>> getColumnLeaves() {
         return columnLeaves;
     }
+
+
 }

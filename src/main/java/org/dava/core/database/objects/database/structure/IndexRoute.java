@@ -6,6 +6,7 @@ import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
 import java.io.Serializable;
 import java.util.List;
+import java.util.Objects;
 import java.util.stream.IntStream;
 
 import static org.dava.core.database.objects.exception.ExceptionType.BASE_IO_ERROR;
@@ -91,6 +92,13 @@ public class IndexRoute {
     }
 
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        IndexRoute route = (IndexRoute) o;
+        return Objects.equals(partition, route.partition) && Objects.equals(offsetInTable, route.offsetInTable) && Objects.equals(lengthInTable, route.lengthInTable);
+    }
     @Override
     public String toString() {
         return "IndexRoute{" +
