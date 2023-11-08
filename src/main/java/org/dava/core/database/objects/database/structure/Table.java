@@ -35,6 +35,7 @@ public class Table<T> {
 
 
     public Table(Class<T> tableClass, String databaseRoot, Mode mode, long seed) {
+        FileUtil.invalidateCache();  // making sure cache hasn't cached anything from file with the same names
 
         org.dava.external.annotations.Table annotation = Optional.ofNullable(
             tableClass.getAnnotation( org.dava.external.annotations.Table.class )

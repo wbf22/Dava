@@ -472,6 +472,7 @@ public class FileUtil {
         Files.walkFileTree(path, EnumSet.noneOf(FileVisitOption.class), Integer.MAX_VALUE, new FileVisitor<>() {
             @Override
             public FileVisitResult visitFile(Path path, BasicFileAttributes basicFileAttributes) throws IOException {
+                cache.invalidate(path.toString());
                 Files.delete(path); // Delete files
                 return FileVisitResult.CONTINUE;
             }
