@@ -38,6 +38,7 @@ public class Cache {
      */
     public <T, E extends Exception> T get(String resourceName, String operationHash, CheckedSupplier<T, E> resourceCall) throws E {
 
+        // TODO handle cache getting too big
         if (pathCache.containsKey(resourceName)) {
             Map<String, Object> resource = pathCache.get(resourceName);
             if (resource.containsKey(operationHash))

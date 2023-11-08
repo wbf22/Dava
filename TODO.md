@@ -15,6 +15,7 @@
 - Have create and modified date for each row?
 - Consider cleaning up table or logging something if empties file is huge
 - Could be fun to make a little id generator
+- Handle FileUtil cache getting too big
 
 # ToTest
 - queries without limit's or offsets

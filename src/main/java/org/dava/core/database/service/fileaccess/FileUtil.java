@@ -19,6 +19,11 @@ public class FileUtil {
     private FileUtil() {}
 
 
+    public static void invalidateCache() {
+        cache.invalidateCache();
+    }
+
+
     public static void writeObjectToFile(String destinationPath, Object object) throws IOException {
         cache.invalidate(destinationPath);
 
