@@ -1,6 +1,7 @@
 package org.dava.common;
 
 import java.util.Arrays;
+import java.util.List;
 
 public class ArrayUtil {
 
@@ -15,6 +16,19 @@ public class ArrayUtil {
         byte[] result = Arrays.copyOf(array1, array1.length + array2.length);
         System.arraycopy(array2, 0, result, array1.length, array2.length);
         return result;
+    }
+
+    public static byte[] appendArrays(List<Object> arrays, int arraySize) {
+        byte[] newArray = new byte[arraySize * arrays.size()];
+
+        int index = 0;
+        for (Object array : arrays) {
+            byte[] bytes = (byte[]) array;
+            System.arraycopy(bytes, 0, newArray, index, bytes.length);
+            index += arraySize;
+        }
+
+        return newArray;
     }
 
     public static <T> T[] subRange(T[] array, int startIndex, int endIndex) {

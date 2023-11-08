@@ -2,10 +2,10 @@ package org.dava.core.database.objects.database.structure;
 
 /**
  * Mode for table optimization. Organized by
- * (slowest insertion / fastest query or access) to (fastest insertion / slowest query or access)
+ * (slowest insertion and most memory / fastest query or access) to (fastest insertion and least memory / slowest query or access)
  * The modes allow you to optimize your table for these qualities, changing how the table
  * is managed. Certain modes collect more meta data to speed up queries, while others collect
- * less and because of that inserts/updates are faster.
+ * less and because of that inserts/updates are faster and the table uses less memory.
  */
 public enum Mode {
     /**

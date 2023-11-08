@@ -15,6 +15,7 @@ public class BasicDateTime extends Date<LocalDateTime> {
         this.year = year;
         this.stringValue = stringValue;
         this.localDateTime = localDateTime;
+        this.type = LocalDateTime.class;
     }
 
 

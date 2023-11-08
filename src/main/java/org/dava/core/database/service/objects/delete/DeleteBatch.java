@@ -1,67 +1,84 @@
 package org.dava.core.database.service.objects.delete;
 
-import org.dava.core.database.objects.database.structure.IndexRoute;
+import org.dava.core.database.objects.database.structure.Row;
+import org.dava.core.database.objects.database.structure.Table;
 
 import java.util.List;
 import java.util.Map;
 
 public class DeleteBatch {
+    private List<Row> rows;
+    private long oldTableSize;
+    private long oldEmptiesSize;
+    private Map<String, IndexDelete> indexPathToIndicesToDelete;
+    private Map<String, CountChange> numericCountFileChanges;
 
-    public List<IndexRoute> rowLocationsInTable;
 
-    public Map<String, IndexDelete> indicesToRemove;
 
-    public List<String> deletedIndices;
+    public String getRollbackString(Table<?> table, String partition) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Delete Batch:\n");
 
-    public Map<String, Integer> numericCountFileChanges;
+        // all the rows that are being deleted
+        rows.forEach( row -> {
+            builder.append("R:");
+            if (row.getLocationInTable() != null) {
+                builder.append(row.getLocationInTable().getOffsetInTable())
+                    .append(",")
+                    .append(row.getLocationInTable().getLengthInTable())
+                    .append(";");
+            }
+            builder.append(Row.serialize(table, row.getColumnsToValues()))
+                .append("\n");
+        });
 
-    public Map<String, Integer> emptiesFileOldFileLengths;
+        // table sizes
+        builder.append("TS:")
+            .append(oldTableSize)
+            .append("\n");
 
-    public long oldTableSize;
+        // emtpies sizes
+        builder.append("ES:")
+            .append(oldEmptiesSize)
+            .append("\n");
+
+        // indices to delete
+        indexPathToIndicesToDelete.forEach( (indexPath, indexDelete) -> {
+            builder.append("I:").append(indexPath).append(";");
+            indexDelete.getRoutesToDelete().forEach(offset -> {
+                builder.append("R:")
+                    .append(offset)
+                    .append(";");
+            });
+            // use the route above to remove lines from table. Then search for route in index and whitespace the route there
+            builder.append("\n");
+        });
+
+        // old count file values
+        numericCountFileChanges.forEach( (countFile, countChange) -> {
+            builder.append("C:")
+                .append(countFile)
+                .append(",")
+                .append(countChange.getOldCount())
+                .append(";");
+            // use the route above to remove lines from table. Then search for route in index and whitespace the route there
+            builder.append("\n");
+        });
+
+        return builder.toString();
+    }
 
 
     /*
         getter setter
      */
 
-    public List<IndexRoute> getRowLocationsInTable() {
-        return rowLocationsInTable;
+    public List<Row> getRows() {
+        return rows;
     }
 
-    public void setRowLocationsInTable(List<IndexRoute> rowLocationsInTable) {
-        this.rowLocationsInTable = rowLocationsInTable;
-    }
-
-    public Map<String, IndexDelete> getIndicesToRemove() {
-        return indicesToRemove;
-    }
-
-    public void setIndicesToRemove(Map<String, IndexDelete> indicesToRemove) {
-        this.indicesToRemove = indicesToRemove;
-    }
-
-    public List<String> getDeletedIndices() {
-        return deletedIndices;
-    }
-
-    public void setDeletedIndices(List<String> deletedIndices) {
-        this.deletedIndices = deletedIndices;
-    }
-
-    public Map<String, Integer> getNumericCountFileChanges() {
-        return numericCountFileChanges;
-    }
-
-    public void setNumericCountFileChanges(Map<String, Integer> numericCountFileChanges) {
-        this.numericCountFileChanges = numericCountFileChanges;
-    }
-
-    public Map<String, Integer> getEmptiesFileOldFileLengths() {
-        return emptiesFileOldFileLengths;
-    }
-
-    public void setEmptiesFileOldFileLengths(Map<String, Integer> emptiesFileOldFileLengths) {
-        this.emptiesFileOldFileLengths = emptiesFileOldFileLengths;
+    public void setRows(List<Row> rows) {
+        this.rows = rows;
     }
 
     public long getOldTableSize() {
@@ -70,5 +87,29 @@ public class DeleteBatch {
 
     public void setOldTableSize(long oldTableSize) {
         this.oldTableSize = oldTableSize;
+    }
+
+    public long getOldEmptiesSize() {
+        return oldEmptiesSize;
+    }
+
+    public void setOldEmptiesSize(long oldEmptiesSize) {
+        this.oldEmptiesSize = oldEmptiesSize;
+    }
+
+    public Map<String, IndexDelete> getIndexPathToIndicesToDelete() {
+        return indexPathToIndicesToDelete;
+    }
+
+    public void setIndexPathToIndicesToDelete(Map<String, IndexDelete> indexPathToIndicesToDelete) {
+        this.indexPathToIndicesToDelete = indexPathToIndicesToDelete;
+    }
+
+    public Map<String, CountChange> getNumericCountFileChanges() {
+        return numericCountFileChanges;
+    }
+
+    public void setNumericCountFileChanges(Map<String, CountChange> numericCountFileChanges) {
+        this.numericCountFileChanges = numericCountFileChanges;
     }
 }

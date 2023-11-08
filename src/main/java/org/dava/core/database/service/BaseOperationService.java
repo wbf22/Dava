@@ -3,6 +3,7 @@ package org.dava.core.database.service;
 
 import org.dava.common.ArrayUtil;
 import org.dava.common.Bundle;
+import org.dava.common.HashUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
@@ -87,42 +88,30 @@ public class BaseOperationService {
         }
     }
 
-    public static List<Row> getAllRowsFromIndex(String indexPath, String partition, Database database, String tableName) {
-        Table<?> table = database.getTableByName(tableName);
-
-        List<IndexRoute> routes = getRoutes(
-                indexPath,
-                partition,
-                8L,
-                null
-        ).getSecond();
-
-        List<String> lines = getLinesUsingRoutes(partition, table, routes);
-
-        return IntStream.range(0, lines.size())
-            .mapToObj(i -> new Row(lines.get(i), table, routes.get(i)))
-            .toList();
-    }
 
     /**
      * Gets rows from the table from start to end row.
      *
      * @return a list of rows of size 0 to (endRow - startRow)
      */
-    public static List<Row> getRowsFromTable(Database database, String tableName, String columnName, String value, long startRow, long endRow) {
-        Table<?> table = database.getTableByName(tableName);
+    public static List<Row> getRowsFromTable(Table<?> table, String columnName, String value, long startRow, Long endRow) {
 
         Column<?> column = table.getColumn(columnName);
         if (column.isIndexed()) {
             return table.getPartitions().parallelStream()
                 .flatMap(partition -> {
-                    String path = Index.buildIndexPath(database.getRootDirectory(), tableName, partition, column, table.getLeafList(partition, columnName), value);
+                    String indexPath = Index.buildIndexPath(
+                        table,
+                        partition,
+                        columnName,
+                        value
+                    );
 
                     List<IndexRoute> routes = getRoutes(
-                        path,
+                        indexPath,
                         partition,
                         8 + startRow * 10,
-                        (int) (endRow * 10)
+                        (endRow == null)? null : (int) (endRow - startRow) * 10
                     ).getSecond();
 
                     List<String> lines = getLinesUsingRoutes(partition, table, routes);
@@ -146,8 +135,6 @@ public class BaseOperationService {
                 .toList();
         }
 
-
-
     }
 
     private static Stream<Row> getAllLinesWithoutRoutes(Table<?> table, String partition, Predicate<Row> filter, long startRow, Long endRow) {
@@ -169,11 +156,26 @@ public class BaseOperationService {
             .toList();
 
             int index = 1; // +1 for header line of table
+            long offset = tableRows.get(0).getBytes().length + 1;
             List<Row> rows = new ArrayList<>();
             while ( rows.size() < end && index < tableRows.size() ) {
-                Row row = new Row(tableRows.get(index), table, null);
-                if (filter.test(row))
-                    rows.add(row);
+                String rowString = tableRows.get(index);
+                if (!rowString.equals( " ".repeat(rowString.length()) )) {
+                    Row row = new Row(
+                        rowString,
+                        table,
+                        new IndexRoute(
+                            partition,
+                            offset,
+                            rowString.getBytes(StandardCharsets.UTF_8).length + 1
+                        )
+                    );
+
+                    offset += rowString.getBytes(StandardCharsets.UTF_8).length + 1;
+
+                    if (filter.test(row))
+                        rows.add(row);
+                }
                 index++;
             }
 
@@ -191,9 +193,8 @@ public class BaseOperationService {
     /**
      * Get's rows by date from both partitions
      */
-    public static List<Row> getAllComparingDate(
-            Database database,
-            String tableName,
+    public static Stream<Row> getAllComparingDate(
+            Table<?> table,
             String columnName,
             BiPredicate<Integer, Integer> compareYearsFolderYearDateYear,
             BiPredicate<Date<?>, Date<?>> compareDatesRowYearDateYear,
@@ -201,7 +202,6 @@ public class BaseOperationService {
             boolean descending
     ) {
         int year = date.getYear();
-        Table<?> table = database.getTableByName(tableName);
         Column<?> column = table.getColumn(columnName);
 
         Comparator<Row> comparator = Comparator.comparing(
@@ -223,13 +223,12 @@ public class BaseOperationService {
                         null
                     )
                 )
-                .sorted(comparator)
-                .toList();
+                .sorted(comparator);
         }
 
         return table.getPartitions().parallelStream()
             .flatMap(partition -> {
-                String path = Index.buildColumnPath(database.getRootDirectory(), tableName, partition, columnName);
+                String path = Index.buildColumnPath(table.getDatabaseRoot(), table.getTableName(), partition, columnName);
                 File[] yearFolders = FileUtil.listFiles(path);
 
                 List<Row> rows = new ArrayList<>();
@@ -238,25 +237,25 @@ public class BaseOperationService {
                     if (compareYearsFolderYearDateYear.test(folderYear, year)) {
                         rows.addAll(
                             Arrays.stream(FileUtil.listFiles(
-                                Index.buildIndexYearFolderForDate(database.getRootDirectory(), tableName, partition, columnName, Integer.toString(folderYear))
+                                Index.buildIndexYearFolderForDate(table, partition, columnName, Integer.toString(folderYear))
                             ))
-                            .flatMap( indexFile -> getAllRowsFromIndex( indexFile.getPath(), partition, database, tableName ).stream() )
+                            .flatMap( indexFile -> getRowsFromTable( table, columnName, indexFile.getName(), 0, null ).stream() )
                             .toList()
                         );
                     }
                     else if (folderYear == year) {
                         rows.addAll(
                             Arrays.stream(FileUtil.listFiles(
-                                Index.buildIndexYearFolderForDate(database.getRootDirectory(), tableName, partition, columnName, Integer.toString(folderYear))
+                                Index.buildIndexYearFolderForDate(table, partition, columnName, Integer.toString(folderYear))
                             ))
                             .flatMap( localDateIndexFile -> {
                                 Date<?> indexLocateDate = Date.of(localDateIndexFile.getName().split("\\.")[0], column.getType());
 
                                 if ( compareDatesRowYearDateYear.test(indexLocateDate, date) ) {
-                                    return getAllRowsFromIndex( localDateIndexFile.getPath(), partition, database, tableName ).stream();
+                                    return getRowsFromTable( table, columnName, indexLocateDate.toString(), 0, null ).stream();
                                 }
                                 else if (indexLocateDate.equals(date.getDateWithoutTime())) {
-                                    return getAllRowsFromIndex( localDateIndexFile.getPath(), partition, database, tableName ).stream()
+                                    return getRowsFromTable( table, columnName, indexLocateDate.toString(), 0, null ).stream()
                                             .filter( row -> {
                                                 Date<?> rowDate = safeCast(row.getValue(columnName), Date.class);
                                                 return compareDatesRowYearDateYear.test(rowDate, date);
@@ -271,8 +270,7 @@ public class BaseOperationService {
 
                 return rows.stream();
             })
-            .sorted(comparator)
-            .toList();
+            .sorted(comparator);
     }
 
     // TODO consider making a separate service for dates, or maybe just chopping up these methods
@@ -304,8 +302,7 @@ public class BaseOperationService {
      *   sql after calls return unsorted unless called with order by
      */
     public static List<Row> getRowsComparingDate(
-            Database database,
-            String tableName,
+            Table<?> table,
             String columnName,
             Date<?> date,
             BiPredicate<Integer, Integer> compareYearsFolderYearDateYear,
@@ -315,10 +312,8 @@ public class BaseOperationService {
             boolean descending
     ) {
 
-        Table<?> table = database.getTableByName(tableName);
-
         // all year folders within partitions, filtered by after date, sorted descending or ascending
-        List<Integer> yearDatesFolders = getYearDateFolders(database, tableName, columnName, date, compareYearsFolderYearDateYear, descending, table);
+        List<Integer> yearDatesFolders = getYearDateFolders(table, columnName, date, compareYearsFolderYearDateYear, descending);
 
 
         List<Row> rows = new ArrayList<>();
@@ -333,7 +328,7 @@ public class BaseOperationService {
             // get date files for year
             List<LocalDate> indicesForLocalDates = table.getPartitions().parallelStream()
                     .flatMap(partition -> {
-                        String yearPath = Index.buildIndexYearFolderForDate(database.getRootDirectory(), tableName, partition, columnName, year.toString());
+                        String yearPath = Index.buildIndexYearFolderForDate(table, partition, columnName, year.toString());
                         return Arrays.stream(FileUtil.listFiles(yearPath))
                                 .map( indexFile -> LocalDate.parse(indexFile.getName().split("\\.")[0]) );
                     })
@@ -350,12 +345,11 @@ public class BaseOperationService {
                                 Date<?> indexLocateDate = Date.of(indexLocalDate.toString(), LocalDate.class);
 
                                 if ( compareDatesRowYearDateYear.test(indexLocateDate, date) ) {
-                                    String path = Index.buildIndexPathForDate(database.getRootDirectory(), tableName, partition, columnName, indexLocalDate);
+                                    String path = Index.buildIndexPathForDate(table.getDatabaseRoot(), table.getTableName(), partition, columnName, indexLocalDate);
                                     return getCountForIndexPath(path);
                                 }
                                 else if (indexLocalDate.equals(date.getDateWithoutTime())) {
-                                    String path = Index.buildIndexPathForDate(database.getRootDirectory(), tableName, partition, columnName, indexLocalDate);
-                                    return (long) getAllRowsFromIndex(path, partition, database, tableName).stream()
+                                    return (long) getRowsFromTable( table, columnName, indexLocalDate.toString(), 0, null ).stream()
                                             .filter(row -> {
                                                 Date<?> rowDate = safeCast(row.getValue(columnName), Date.class);
                                                 return compareDatesRowYearDateYear.test(rowDate, date);
@@ -372,10 +366,9 @@ public class BaseOperationService {
 
                 if (count > startRow) {
                     List<Row> returned = table.getPartitions().parallelStream()
-                            .flatMap(partition -> {
-                                String path = Index.buildIndexPathForDate(database.getRootDirectory(), tableName, partition, columnName, indexLocalDate);
-                                return getAllRowsFromIndex(path, partition, database, tableName).stream();
-                            })
+                            .flatMap(partition ->
+                                 getRowsFromTable(table, columnName, indexLocalDate.toString(), 0, null ).stream()
+                            )
                             .toList();
 
                     if (indexLocalDate.getYear() == year) {
@@ -405,10 +398,22 @@ public class BaseOperationService {
                 .toList();
     }
 
-    public static List<Integer> getYearDateFolders(Database database, String tableName, String columnName, Date<?> date, BiPredicate<Integer, Integer> compareYearsFolderYearDateYear, boolean descending, Table<?> table) {
+
+    public static List<Row> getAllRows(Table<?> table, String partition) {
+        return getAllLinesWithoutRoutes(
+            table,
+            partition,
+            row -> true,
+            0,
+            null
+        )
+        .toList();
+    }
+
+    public static List<Integer> getYearDateFolders(Table<?> table, String columnName, Date<?> date, BiPredicate<Integer, Integer> compareYearsFolderYearDateYear, boolean descending) {
         return table.getPartitions().parallelStream()
             .flatMap(partition -> {
-                String columnPath = Index.buildColumnPath(database.getRootDirectory(), tableName, partition, columnName);
+                String columnPath = Index.buildColumnPath(table.getDatabaseRoot(), table.getTableName(), partition, columnName);
                 return Arrays.stream(FileUtil.listFiles(columnPath))
                     .map(yearFolder -> Integer.parseInt(yearFolder.getName().split("\\.")[0]))
                     .filter(fYear -> compareYearsFolderYearDateYear.test(fYear, date.getYear()))
@@ -495,18 +500,15 @@ public class BaseOperationService {
 
     }
 
-    public static void incrementNumericCountFile(String folderPath) {
+    public static void updateNumericCountFile(String folderPath, long change) {
         String countFile = folderPath + "/c.count";
         try {
             FileUtil.createDirectoriesIfNotExist(folderPath);
 
-            if (!FileUtil.exists(countFile)) {
-                FileUtil.createFile(countFile, TypeToByteUtil.longToByteArray(0L) );
-            }
-
-            long count = getNumericCount(countFile);
-            count++;
-            FileUtil.writeBytes(countFile, 0, TypeToByteUtil.longToByteArray(count) );
+            long count = TypeToByteUtil.byteArrayToLong(
+                FileUtil.readBytes(countFile, 0, 8)
+            );
+            FileUtil.changeCount(countFile, 0, count + change, 8);
 
         } catch (IOException e) {
             throw new DavaException(INDEX_CREATION_ERROR, "Error updating count for numeric index partition: " + countFile, e);
@@ -583,6 +585,7 @@ public class BaseOperationService {
 
 
 
+
     /*
         Table meta data
      */
@@ -599,64 +602,28 @@ public class BaseOperationService {
         FileUtil.popBytes(emptiesFile, 10, startBytes);
     }
 
-    /**
-     * get <= emptiesToGet routes and packages
-     *
-     * doesn't delete any routes, just retrieves
-     */
-    public static EmptiesPackage getEmpties(Integer emptiesToGet, String emptiesFile, Random random) throws IOException {
+    public static EmptiesPackage getAllEmpties(String emptiesFile) throws IOException {
         // TODO don't check for empties every time to avoid this costly file access
         long fileSize = FileUtil.fileSize(emptiesFile);
         if ( fileSize - 10 <= 8) {
             return null;
         }
 
-        Set<Long> startBytes = new HashSet<>();
-
-        emptiesToGet = ( emptiesToGet == null || emptiesToGet > (fileSize -8) / 10 )? (int) (fileSize - 8) / 10 : emptiesToGet;
-
-        IntStream.range(0, emptiesToGet)
-            .forEach( i ->
-                startBytes.add(
-                    ( random.nextLong( 0, (fileSize -8) / 10 ) ) * 10 + 8
-                )
-            );
-
-        List<Long> numBytes = IntStream.range(0, startBytes.size())
-            .mapToObj( i -> 10L)
-            .toList();
-
-        List<Long> listStartBytes = new ArrayList<>(startBytes);
-
         EmptiesPackage emptiesPackages = new EmptiesPackage();
 
-        // TODO assuming here that are startbytes are valid and will be returned.
-        List<Object> bytesArrays = FileUtil.readBytes(emptiesFile, startBytes.stream().toList(), numBytes)
-            .stream()
-            .toList();
+        byte[] bytes = FileUtil.readBytes(emptiesFile);
+        List<IndexRoute> routes = IndexRoute.parseBytes(
+            ArrayUtil.subRange(bytes, 8, bytes.length),
+            null
+        );
 
-        IntStream.range(0, bytesArrays.size())
-            .forEach( i -> {
-                Object bytes = bytesArrays.get(i);
-                if (bytes != null) {
-                    byte[] casted = (byte[]) bytes;
-                    IndexRoute route = new IndexRoute(
-                        null,
-                        TypeToByteUtil.byteArrayToLong(
-                            ArrayUtil.subRange(casted, 0, 6)
-                        ),
-                        (int) TypeToByteUtil.byteArrayToLong(
-                            ArrayUtil.subRange(casted, 6, 10)
-                        )
-                    );
-                    emptiesPackages.addEmpty(
-                        new Empty(
-                            route,
-                            listStartBytes.get(i)
-                        )
-                    );
-                }
-            });
+        routes.forEach( route ->
+            emptiesPackages.addEmpty(
+                new Empty(
+                    route,
+                    route.getOffsetInTable()
+                )
+            ));
 
         return emptiesPackages;
     }

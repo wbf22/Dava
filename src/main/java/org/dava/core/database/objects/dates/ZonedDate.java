@@ -14,6 +14,7 @@ public class ZonedDate extends Date<ZonedDateTime> {
         this.year = year;
         this.stringValue = stringValue;
         this.zonedDateTime = zonedDateTime;
+        this.type = ZonedDateTime.class;
     }
 
 

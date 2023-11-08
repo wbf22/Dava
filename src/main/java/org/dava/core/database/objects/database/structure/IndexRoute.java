@@ -34,22 +34,30 @@ public class IndexRoute {
         return IntStream.range(0, bytes.length/10)
             .mapToObj(i -> {
                 int index = i * 10;
-                byte[] offset = ArrayUtil.subRange(bytes, index, index + 6);
-                byte[] length = ArrayUtil.subRange(bytes, index + 6, index + 10);
-
-                return new IndexRoute(
-                    partition,
-                    TypeToByteUtil.byteArrayToLong(
-                        ArrayUtil.appendArray(new byte[2], offset)
-                    ),
-                    TypeToByteUtil.byteArrayToInt(
-                        length
-                    )
+                return parseRoute(
+                    ArrayUtil.subRange(bytes, index, index+10),
+                    partition
                 );
             })
             .toList();
 
     }
+
+    public static IndexRoute parseRoute(byte[] bytes, String partition) {
+        byte[] offset = ArrayUtil.subRange(bytes, 0, 6);
+        byte[] length = ArrayUtil.subRange(bytes, 6, 10);
+
+        return new IndexRoute(
+            partition,
+            TypeToByteUtil.byteArrayToLong(
+                ArrayUtil.appendArray(new byte[2], offset)
+            ),
+            TypeToByteUtil.byteArrayToInt(
+                length
+            )
+        );
+    }
+
 
     public byte[] getRouteAsBytes() {
         byte[] offset = TypeToByteUtil.longToByteArray(offsetInTable);

@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class EmptiesPackage {
 
@@ -66,5 +67,16 @@ public class EmptiesPackage {
 
     public Map<Integer, List<Empty>> getUsedEmpties() {
         return usedEmpties;
+    }
+
+    public String getRemaingingEmptiesString() {
+        return remainingEmpties.values().stream()
+            .map( empties ->
+                empties.stream().map(empty ->
+                    empty.getStartByte() + ":" + empty.getRoute().getLengthInTable()
+                )
+                .collect(Collectors.joining(";"))
+            )
+            .collect(Collectors.joining("\n"));
     }
 }

@@ -6,6 +6,7 @@ import org.dava.common.logger.Logger;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.OffsetDate;
 import org.dava.core.database.service.BaseOperationService;
+import org.dava.core.database.service.Delete;
 import org.dava.core.database.service.Insert;
 import org.dava.core.database.service.MarshallingService;
 import org.dava.core.database.service.fileaccess.FileUtil;
@@ -34,9 +35,9 @@ class OperationServiceTest {
 
     static Database database;
     static int ITERATIONS = 1000;
-    static Level logLevel = Level.INFO;
+    static Level logLevel = Level.DEBUG;
 //    static String DB_ROOT = "/Users/brandon.fowler/Desktop/db";
-    static Mode TABLE_MODE = Mode.INDEX_ALL;
+    static Mode TABLE_MODE = Mode.MANUAL;
     static String DB_ROOT = "db";
     static Long seed = -183502108378805369L;
     private static final Logger log = Logger.getLogger(OperationServiceTest.class.getName());
@@ -89,7 +90,7 @@ class OperationServiceTest {
 //            time = time.withOffsetSameInstant(ZoneOffset.UTC);
                 Order orderTable = new Order(
                     UUID.nameUUIDFromBytes(String.valueOf(seed + i).getBytes()).toString(),
-                    "This is a long description. A lot of tables could have something like this so this will be a good test.",
+                    "This is a long description. A lot of tables could have something like this, so this will be a good test.",
                     BigDecimal.valueOf(Math.abs(random.nextLong(0, 100))),
                     BigDecimal.valueOf(Math.abs(random.nextLong(0, 5))),
                     time
@@ -109,7 +110,7 @@ class OperationServiceTest {
 
 
     @Test
-    void insert() throws IOException {
+    void insert() {
         //   181,801 / 293,141 = 62% data, 28% meta
         //   193,031 / 254,167 = 76% data, 24% meta (with large text column)
 
@@ -139,11 +140,12 @@ class OperationServiceTest {
     }
 
     @Test
-    void equals() throws IOException {
+    void equals() {
+        Table<?> table = database.getTableByName("Order");
 
         Timer timer = Timer.start();
         Equals equals = new Equals("total", "25");
-        List<Row> rows = equals.retrieve(database, new ArrayList<>(), "Order", 10L, null);
+        List<Row> rows = equals.retrieve(table, new ArrayList<>(), 10L, null);
         timer.printRestart();
 
         rows.forEach( row -> {
@@ -156,14 +158,15 @@ class OperationServiceTest {
     }
 
     @Test
-    void and() throws IOException {
+    void and() {
+        Table<?> table = database.getTableByName("Order");
 
         Timer timer = Timer.start();
         And and = new And(
             new Equals("total", "25"),
             new Equals("discount", "1")
         );
-        List<Row> rows = and.retrieve(database, new ArrayList<>(), "Order", 10L, 1L);
+        List<Row> rows = and.retrieve(table, new ArrayList<>(), 10L, 1L);
         timer.printRestart();
 
         rows.forEach( row -> {
@@ -178,7 +181,8 @@ class OperationServiceTest {
     }
 
     @Test
-    void after() throws IOException {
+    void after() {
+        Table<?> table = database.getTableByName("Order");
 
         long offset = 5L;
         OffsetDate date = OffsetDate.of(OffsetDateTime.now().minusYears(1).toString());
@@ -189,7 +193,7 @@ class OperationServiceTest {
                 date,
                 true
         );
-        List<Row> rows = after.retrieve(database, new ArrayList<>(), "Order", 10L, offset);
+        List<Row> rows = after.retrieve(table, new ArrayList<>(), 10L, offset);
         timer.printRestart();
 
         log.debug(date.toString());
@@ -206,7 +210,8 @@ class OperationServiceTest {
     }
 
     @Test
-    void before() throws IOException {
+    void before() {
+        Table<?> table = database.getTableByName("Order");
 
         long offset = 5L;
         OffsetDate date = OffsetDate.of(OffsetDateTime.now().minusYears(10).toString());
@@ -217,7 +222,7 @@ class OperationServiceTest {
                 date,
                 true
         );
-        List<Row> rows = before.retrieve(database, new ArrayList<>(), "Order", 10L, offset);
+        List<Row> rows = before.retrieve(table, new ArrayList<>(), 10L, offset);
         timer.printRestart();
 
         log.debug(date.toString());
@@ -234,68 +239,57 @@ class OperationServiceTest {
     }
 
     @Test
-    void getIndices() {
+    void delete() {
         Table<?> table = database.getTableByName("Order");
-        String partition = table.getRandomPartition();
 
-        String indexPath = "db/Order/indecis_Order/total/0.index";
-        List<IndexRoute> indices = BaseOperationService.getRoutes(indexPath, partition, 8L, null).getSecond();
+        Equals equals = new Equals("total", "25");
+        List<Row> rows = equals.retrieve(table, new ArrayList<>(), null, null);
 
-        indices.forEach( route -> {
-            log.debug(route.toString());
 
-            String row = String.join(
-                "\n",
-                BaseOperationService.getLinesUsingRoutes(partition, table, List.of(route))
-            );
-            log.debug(row);
-        });
+        Delete delete = new Delete(database, table);
+        Timer timer = Timer.start();
+        delete.delete(rows);
+        timer.printRestart();
 
-        log.debug("Total Rows: " + indices.size());
+        List<Row> afterRows = equals.retrieve(table, new ArrayList<>(), null, null);
+        assertEquals(0, afterRows.size());
     }
 
     @Test
-    void test() {
-        LocalDate localDate = LocalDate.now();
-        LocalDateTime localDateTime = LocalDateTime.now();
-        OffsetDateTime offsetDateTime = OffsetDateTime.now();
-        ZonedDateTime zonedDateTime = ZonedDateTime.now();
-        log.debug(localDate.toString());
-        log.debug(localDateTime.toString());
-        log.debug(offsetDateTime.toString());
-        log.debug(zonedDateTime.toString());
+    void delete_and() {
+        Table<?> table = database.getTableByName("Order");
 
-        ZonedDateTime zt = LocalDate.of(2019, 10, 20)
-            .atTime(1, 1, 1)
-            .atZone(ZoneId.of("America/Denver"));
+        OffsetDate date = OffsetDate.of(OffsetDateTime.now().minusYears(10).toString());
+        Before<OffsetDate> before = new Before<>(
+            "time",
+            date,
+            true
+        );
+        List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
 
-        OffsetDateTime unParsed = offsetDateTime.withOffsetSameInstant(ZoneOffset.MAX);
-        log.debug(unParsed.toString());
-        log.debug(String.valueOf(unParsed.isEqual(offsetDateTime)));
-
-        log.space();
-        ZonedDateTime newYears = ZonedDateTime.of(2020, 1, 1, 0, 0, 0, 0, ZoneOffset.MAX);
-        ZonedDateTime notYetNewYear = newYears.plusMinutes(1).withZoneSameInstant(ZoneOffset.MIN);
-        log.debug(String.valueOf(notYetNewYear.isAfter(newYears)));
-
-        log.debug("New years: " + newYears);
-        log.debug("Same but min time zone: " + notYetNewYear);
-        log.debug("Converted back: " + notYetNewYear.withZoneSameInstant(ZoneOffset.MAX));
+        Delete delete = new Delete(database, table);
+        delete.delete(rows);
 
 
-        BigDecimal bdI = new BigDecimal( Integer.parseInt("0") );
-        BigDecimal bdL = new BigDecimal( Long.parseLong("0") );
-        BigDecimal bdD = new BigDecimal( Double.parseDouble("0.31") );
-        BigDecimal bdD2 = BigDecimal.valueOf( Double.parseDouble("0.31") );
-        BigDecimal bdF = new BigDecimal( Float.parseFloat("48984.2354") );
+        OffsetDate andDate = OffsetDate.of(OffsetDateTime.now().minusYears(1));
+        And and = new And(
+            new After<>("time", andDate, true),
+            new Equals("discount", "1")
+        );
+        rows = and.retrieve(table, new ArrayList<>(), null, null);
 
-        log.debug(bdI.toString());
-        log.debug(bdL.toString());
-        log.debug(bdD.toString());
-        log.debug(bdD2.toString());
-        log.debug(bdF.toString());
+        rows.forEach( row -> {
+            log.debug(
+                Row.serialize(database.getTableByName(row.getTableName()), row.getColumnsToValues())
+            );
+            assertEquals("1", row.getValue("discount"));
+            OffsetDate rowDate = OffsetDate.of(row.getValue("time").toString());
+            assertTrue(rowDate.isAfter(andDate) || rowDate.equals(andDate));
+        });
+
 
     }
+
 
 
 

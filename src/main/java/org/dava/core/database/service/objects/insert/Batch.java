@@ -12,13 +12,11 @@ public class Batch {
     private EmptiesPackage tableEmpties;
     private List<RowWritePackage> rowWritePackages;
     private Map<String, List<IndexWritePackage>> indexWriteGroups;
-    private Map<String, EmptiesPackage> indexEmpties;
     private List<String> numericRepartitions;
 
 
     public Batch() {
         this.indexWriteGroups = new HashMap<>();
-        this.indexEmpties = new HashMap<>();
         this.numericRepartitions = new ArrayList<>();
         this.tableEmpties = new EmptiesPackage();
     }
@@ -37,12 +35,6 @@ public class Batch {
         }
     }
 
-    public EmptiesPackage getEmptiesPackage(String indexPath) {
-        if (indexEmpties.containsKey(indexPath)) {
-            return indexEmpties.get(indexPath);
-        }
-        return null;
-    }
 
     public void addNumericRepartition(String indexPath) {
         this.numericRepartitions.add(indexPath);
@@ -50,6 +42,7 @@ public class Batch {
 
     public String makeRollbackString() {
         StringBuilder builder = new StringBuilder();
+        builder.append("Insert Batch:\n");
 
         // for rolling back rows added to the table
         // and new routes added to each index
@@ -77,22 +70,6 @@ public class Batch {
                     .append("\n")
             // use the route to just add empties back to empties file (empties in table are whitespaced out in previous step)
         ));
-
-        // for rolling back used index empties
-        indexEmpties.forEach( (indexPath, emptiesPackage) -> {
-            builder.append("IE:").append(indexPath);
-            emptiesPackage.getUsedEmpties().forEach( (length, empties) ->
-                empties.forEach( empty ->
-                    builder.append("E:")
-                        .append(empty.getRoute().getOffsetInTable())
-                        .append(",")
-                        .append(empty.getRoute().getLengthInTable())
-                        .append(";")
-                )
-            );
-            builder.append("\n");
-            // add each route above to the respective index empties file
-        });
 
         // for rolling back numeric repartitions
         numericRepartitions.forEach( folderPath ->
@@ -126,13 +103,6 @@ public class Batch {
         return indexWriteGroups;
     }
 
-    public Map<String, EmptiesPackage> getIndexEmpties() {
-        return indexEmpties;
-    }
-
-    public void setIndexEmpties(Map<String, EmptiesPackage> indexEmpties) {
-        this.indexEmpties = indexEmpties;
-    }
 
     public void setTableEmpties(EmptiesPackage tableEmpties) {
         this.tableEmpties = tableEmpties;

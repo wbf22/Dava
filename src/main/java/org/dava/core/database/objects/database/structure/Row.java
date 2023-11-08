@@ -20,16 +20,16 @@ public class Row {
         try {
             this.locationInTable = locationInTable;
             line = line.trim();
-            String[] values = line.split(",");
+            List<String> values = getValuesFromLine(line);
             columnsToValues = new HashMap<>();
             List<Map.Entry<String, Column<?>>> list = new ArrayList<>(table.getColumns().entrySet());
-            for (int i = 0; i < values.length; i++) {
+            for (int i = 0; i < values.size(); i++) {
                 Column<?> column = list.get(i).getValue();
                 columnsToValues.put(
                     column.getName(),
                     mapIfTrue(
                         Date.isDateSupportedDateType(column.getType()),
-                        values[i],
+                        values.get(i),
                         stringValue -> Date.of(stringValue, column.getType())
                     )
                 );
@@ -44,16 +44,45 @@ public class Row {
         }
     }
 
+    public static List<String> getValuesFromLine(String line) {
+        List<String> values = new ArrayList<>();
+
+        boolean inQuotes = false;
+        StringBuilder value = new StringBuilder();
+        for (char c : line.toCharArray()) {
+
+            if (c == '\"') {
+                inQuotes = !inQuotes;
+            }
+            else {
+                if (c == ',' && !inQuotes) {
+                    values.add(value.toString());
+                    value = new StringBuilder();
+                }
+                else {
+                    value.append(c);
+                }
+            }
+        }
+        values.add(value.toString());
+
+        return values;
+    }
 
     public static String serialize(Table<?> table, Map<String, Object> columnsToValuesMap) {
         StringBuilder serialization = new StringBuilder();
-        table.getColumns().values().forEach(column ->
-            serialization.append( columnsToValuesMap.get(column.getName()) ).append(",")
-        );
+        table.getColumns().values().forEach(column -> {
+            String value = columnsToValuesMap.get(column.getName()).toString();
+            if (column.getType() == String.class && value.contains(",")) {
+                serialization.append("\"").append( value ).append("\"").append(",");
+            }
+            else {
+                serialization.append( value ).append(",");
+            }
+        });
         serialization.delete(serialization.length()-1, serialization.length());
         return serialization.toString();
     }
-
 
     public Row(Map<String, Object> columnsToValues, String tableName) {
         this.columnsToValues = columnsToValues;

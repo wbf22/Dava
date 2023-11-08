@@ -31,4 +31,13 @@ public class Column<T> {
     }
 
 
+    @Override
+    public String toString() {
+        return "Column{" +
+            "name='" + name + '\'' +
+            ", type=" + type +
+            ", isIndexed=" + isIndexed +
+            ", isUnique=" + isUnique +
+            '}';
+    }
 }

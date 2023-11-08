@@ -1,17 +1,16 @@
 package org.dava.core.database.service.fileaccess;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.function.Supplier;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Class for maintaining a cache of time sensitive operations.
  */
 public class Cache {
 
-    private Map<String, Map<String, Object>> pathCache = new HashMap<>();
+    private Map<String, Map<String, Object>> pathCache = new ConcurrentHashMap<>();
 
 
     /**
@@ -37,10 +36,12 @@ public class Cache {
      * @param resourceCall the lambda function that does the actual work on the resource
      * @return the result of the lambda function or whatever was in the cache.
      */
-    public <T> T read(String resourceName, String operationHash, Supplier<T> resourceCall) {
+    public <T, E extends Exception> T get(String resourceName, String operationHash, CheckedSupplier<T, E> resourceCall) throws E {
 
         if (pathCache.containsKey(resourceName)) {
-            return (T) pathCache.get(resourceName).get(operationHash);
+            Map<String, Object> resource = pathCache.get(resourceName);
+            if (resource.containsKey(operationHash))
+                return (T) resource.get(operationHash);
         }
 
         T result = resourceCall.get();
@@ -54,32 +55,29 @@ public class Cache {
     }
 
     /**
-     * Invalidates the cache for 'resourceName' and performs logic in the lambda 'resourceCall'.
+     * Invalidates the cache for 'resourceName'.
      * @param resourceName name for a resource in the cache that needs to be invalidated when this logic is
      *                     run.
-     * @param resourceCall lambda to run after cache is invalidated for 'resourceName'
      */
-    public void write(String resourceName, Runnable resourceCall) {
+    public void invalidate(String resourceName) {
         pathCache.remove(resourceName);
-        resourceCall.run();
     }
 
     /**
      * resets this cache, invalidating all resources
      */
     public void invalidateCache() {
-        pathCache = new HashMap<>();
+        pathCache = new ConcurrentHashMap<>();
     }
 
     /**
-     * Utility function for creating a hash from a list of method params. Good for use in Cache.read()
+     * Utility functions for creating a hash from a list of method params. Good for use in Cache.read()
      * call.
-     * @param methodParamsInCall a list of method params or any objects
-     * @return a hash made from 'methodParamsInCall' (uses UUID.nameUUIDFromBytes())
      */
-    public static String hashOperation(List<Object> methodParamsInCall) {
-        StringBuilder stringBuilder = new StringBuilder();
-        methodParamsInCall.forEach(stringBuilder::append);
+
+
+    public static String hash(Object methodParamInCall) {
+        StringBuilder stringBuilder = new StringBuilder(methodParamInCall.toString());
         return UUID.nameUUIDFromBytes(
             stringBuilder.toString()
                 .getBytes()
@@ -87,6 +85,39 @@ public class Cache {
     }
 
 
+    public static String hash(Object param1, Object param2) {
+        StringBuilder stringBuilder = new StringBuilder();
+        stringBuilder.append(param1);
+        stringBuilder.append(param2);
+        return UUID.nameUUIDFromBytes(
+            stringBuilder.toString()
+                .getBytes()
+        ).toString();
+    }
 
+
+    public static String hash(Object param1, Object param2, Object param3) {
+        StringBuilder stringBuilder = new StringBuilder();
+        stringBuilder.append(param1);
+        stringBuilder.append(param2);
+        stringBuilder.append(param3);
+        return UUID.nameUUIDFromBytes(
+            stringBuilder.toString()
+                .getBytes()
+        ).toString();
+    }
+
+
+    public static String hash(Object param1, Object param2, Object param3, Object param4) {
+        StringBuilder stringBuilder = new StringBuilder();
+        stringBuilder.append(param1);
+        stringBuilder.append(param2);
+        stringBuilder.append(param3);
+        stringBuilder.append(param4);
+        return UUID.nameUUIDFromBytes(
+            stringBuilder.toString()
+                .getBytes()
+        ).toString();
+    }
 
 }

@@ -22,69 +22,48 @@ public abstract class DateCondition<T extends Date<?>> implements Condition {
 
 
     @Override
-    public List<Row> retrieve(Database database, List<Condition> parentFilters, String from, Long limit, Long offset) {
-        List<Row> rows;
-        boolean allRows = limit == null && offset == null;
-        Column<?> column = database.getTableByName(from).getColumn(columnName);
-        if (allRows || !column.isIndexed()) {
-            rows = BaseOperationService.getAllComparingDate(
-                database,
-                from,
+    public List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Long limit, Long offset) {
+        return retrieve(
+            table,
+            parentFilters,
+            columnName,
+            () -> BaseOperationService.getAllComparingDate(
+                table,
                 columnName,
                 compareYearsFolderToYearDateYearAllRows,
                 compareDates,
                 date,
                 descending
-            );
-            rows = rows.stream()
-                .filter(row -> parentFilters.parallelStream().allMatch(condition -> condition.filter(row)))
-                .toList();
-
-            if (!allRows && limit != null)
-                return limit(rows, limit, offset);
-
-        }
-        else {
-            rows = getRowsLimited(
-                database,
-                parentFilters,
-                from,
-                limit,
-                offset,
-                (startRow, rowsPerIteration) -> BaseOperationService.getRowsComparingDate(
-                    database,
-                    from,
-                    columnName,
-                    date,
-                    compareYearsFolderToYearDateYear,
-                    compareDates,
-                    startRow,
-                    startRow + rowsPerIteration,
-                    descending
-                )
-            );
-        }
-
-        return rows;
+            ),
+            (startRow, rowsPerIteration) -> BaseOperationService.getRowsComparingDate(
+                table,
+                columnName,
+                date,
+                compareYearsFolderToYearDateYear,
+                compareDates,
+                startRow,
+                startRow + rowsPerIteration,
+                descending
+            ),
+            limit,
+            offset
+        );
     }
 
 
     @Override
-    public Long getCountEstimate(Database database, String from) {
-        Table<?> table = database.getTableByName(from);
+    public Long getCountEstimate(Table<?> table) {
         Column<?> columnObj = table.getColumn(columnName);
         if (columnObj.isIndexed()) {
             List<Integer> yearfolders = BaseOperationService.getYearDateFolders(
-                database,
-                from,
+                table,
                 columnName,
                 date,
                 compareYearsFolderToYearDateYear,
-                descending,
-                table
+                descending
             );
 
-            String path = Index.buildColumnPath(database.getRootDirectory(), from, table.getRandomPartition(), columnName);
+            String path = Index.buildColumnPath(table.getDatabaseRoot(), table.getTableName(), table.getRandomPartition(), columnName);
             path += "/" + yearfolders.get(yearfolders.size() - 1);
             File[] subDirs = FileUtil.listFiles(path);
             path = subDirs[0].getPath();

@@ -83,7 +83,7 @@ public class Table<T> {
                             // make count file if doesn't exist
                             FileUtil.createDirectoriesIfNotExist(indexPath);
                             if (!FileUtil.exists(indexPath + "/c.count"))
-                                FileUtil.createFile(indexPath + "/c.count");
+                                FileUtil.createFile(indexPath + "/c.count", TypeToByteUtil.longToByteArray(0L));
                         }
 
                     } catch (IOException e) {
@@ -117,41 +117,39 @@ public class Table<T> {
 
 
         // set up the column titles
-        initTableCsv(partitions);
+        partitions.forEach(this::initTableCsv);
 
         random = new Random(seed);
 
     }
 
-    private void initTableCsv(List<String> partitions) {
-        for (String partition : partitions) {
-            try {
-                String path = getTablePath(partition);
+    public void initTableCsv(String partition) {
+        try {
+            String path = getTablePath(partition);
 
-                if (!FileUtil.exists(path)) {
+            if (!FileUtil.exists(path)) {
 
-                    // write column titles
-                    String columnTitles = columns.values().stream()
-                        .map(Column::getName)
-                        .reduce("", (acc, n) -> acc + "," + n )
-                        .substring(1) + "\n";
-                    byte[] bytes = columnTitles.getBytes(StandardCharsets.UTF_8);
-                    FileUtil.writeBytes(
-                        path,
-                        0,
-                        bytes
-                    );
-
-                    // set table row count to 1
-                    setSize(partition, 0L, 1L);
-                }
-            } catch (IOException e) {
-                throw new DavaException(
-                    BASE_IO_ERROR,
-                    "Error writing titles in table: " + tableName,
-                    e
+                // write column titles
+                String columnTitles = columns.values().stream()
+                    .map(Column::getName)
+                    .reduce("", (acc, n) -> acc + "," + n )
+                    .substring(1) + "\n";
+                byte[] bytes = columnTitles.getBytes(StandardCharsets.UTF_8);
+                FileUtil.writeBytes(
+                    path,
+                    0,
+                    bytes
                 );
+
+                // set table row count to 1
+                setSize(partition, 1L);
             }
+        } catch (IOException e) {
+            throw new DavaException(
+                BASE_IO_ERROR,
+                "Error writing titles in table: " + tableName,
+                e
+            );
         }
     }
 
@@ -184,12 +182,12 @@ public class Table<T> {
      * Get an empty row in the table.
      * @return next empty row in the table, or null there are no empty rows.
      */
-    public EmptiesPackage getEmptyRows(String partition, int emptiesNeeded) {
+    public EmptiesPackage getEmptyRows(String partition) {
 
         String emptiesFile = emptiesFilePath(partition);
 
         try {
-            EmptiesPackage emptiesPackage = BaseOperationService.getEmpties(emptiesNeeded, emptiesFile, random);
+            EmptiesPackage emptiesPackage = BaseOperationService.getAllEmpties(emptiesFile);
             return (emptiesPackage == null)? new EmptiesPackage() : emptiesPackage;
         } catch (IOException e) {
             throw new DavaException(
@@ -248,7 +246,7 @@ public class Table<T> {
 
     }
 
-    public void setSize(String partition, Long oldSize, Long newSize) {
+    public void setSize(String partition, Long newSize) {
         if (mode == Mode.LIGHT)
             return;
 
@@ -309,9 +307,7 @@ public class Table<T> {
         return mode;
     }
 
-    public Map<String, List<File>> getColumnLeaves() {
-        return columnLeaves;
+    public String getDatabaseRoot() {
+        return databaseRoot;
     }
-
-
 }

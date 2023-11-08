@@ -17,6 +17,7 @@ public class OffsetDate extends Date<OffsetDateTime> {
         this.year = year;
         this.stringValue = stringValue;
         this.offsetDateTime = offsetDateTime;
+        this.type = OffsetDateTime.class;
     }
 
 

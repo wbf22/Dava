@@ -1,22 +1,23 @@
 package org.dava.core.database.service.objects.delete;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public class IndexDelete {
-    private List<Integer> indicesToDelete;
-    private boolean isIndexEmpty;
+    private List<Long> indicesToDelete;
 
 
-    public IndexDelete(List<Integer> indicesToDelete, boolean isIndexEmpty) {
-        this.indicesToDelete = indicesToDelete;
-        this.isIndexEmpty = isIndexEmpty;
+    public IndexDelete(List<Long> indicesToDelete) {
+        this.indicesToDelete = new ArrayList<>(indicesToDelete);
     }
 
-    public List<Integer> getIndicesToDelete() {
+
+    public void addRoutesToDelete(List<Long> routeNumbers) {
+        indicesToDelete.addAll(routeNumbers);
+    }
+
+    public List<Long> getRoutesToDelete() {
         return indicesToDelete;
     }
 
-    public boolean isIndexEmpty() {
-        return isIndexEmpty;
-    }
 }

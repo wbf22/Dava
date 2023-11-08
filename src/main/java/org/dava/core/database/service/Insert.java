@@ -1,9 +1,7 @@
 package org.dava.core.database.service;
 
-import org.dava.common.HashUtil;
 import org.dava.common.TypeUtil;
 import org.dava.core.database.objects.database.structure.*;
-import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.objects.*;
@@ -40,8 +38,9 @@ public class Insert {
 
 
     public void insert(List<Row> rows) {
+        // TODO instead of using one partition, use multiple to be able to do all this in parallel
 
-        this.rowEmpties = table.getEmptyRows(partition, rows.size());
+        this.rowEmpties = table.getEmptyRows(partition);
 
         // make write packages
         List<RowWritePackage> rowWritePackages = makeWritePackages(rows);
@@ -62,7 +61,7 @@ public class Insert {
     }
 
     private List<String> determineNumericPartitions(Batch writeBatch) {
-        // TODO decide if this is necessary. It might be fine to not rollback these, no significant cost
+        // TODO decide if this is necessary. It might be fine to not rollback repartitions, however this has no significant cost
         List<String> indexRepartitions = new ArrayList<>();
         writeBatch.getIndexWriteGroups()
             .forEach( (indexPath, writeGroup) -> {
@@ -115,26 +114,6 @@ public class Insert {
                 e
             );
         }
-
-        // remove used empties form indices
-        // TODO maybe this could be done in parallel. Could also be done as a routine job.
-        batch.getIndexEmpties().forEach( (countPath, emptiesPackage) -> {
-            try {
-                BaseOperationService.popRoutes(
-                    countPath,
-                    emptiesPackage.getUsedEmpties()
-                        .values()
-                        .stream().flatMap(Collection::stream)
-                        .toList()
-                );
-            } catch (IOException e) {
-                throw new DavaException(
-                    BASE_IO_ERROR,
-                    "Error removing empty in index meta file: " + countPath,
-                    e
-                );
-            }
-        });
     }
 
 
@@ -172,8 +151,6 @@ public class Insert {
 
     private Batch groupIndexWrites(Database database, Table<?> table, List<RowWritePackage> writePackages) {
         Batch batch = new Batch();
-        Map<String, EmptiesPackage> indexEmpties = new HashMap<>();
-
         writePackages.forEach( writePackage -> {
                 Row row = writePackage.getRow();
                 for (Map.Entry<String, Object> columnValue : row.getColumnsToValues().entrySet()) {
@@ -182,46 +159,21 @@ public class Insert {
                     if (column.isIndexed()) {
                         String folderPath = Index.buildIndexRootPath(
                             database.getRootDirectory(),
-                            table.getTableName(),
+                            table,
                             partition,
-                            table.getColumn(columnValue.getKey()),
-                            table.getLeafList(partition, columnValue.getKey()),
+                            column,
                             columnValue.getValue()
                         );
 
-                        Object value = getValue(columnValue, column);
-                        String indexPath = folderPath + "/" + value + ".index";
+                        Object value = Index.prepareValueForIndexName(columnValue.getValue(), column);
+                        String indexPath = Index.indexPathBypass(folderPath, value);
 
-                        // get empty index rows if applicable (any non-unique indices)
-                        Empty indexEmpty = null;
-                        if (!column.isUnique()) {
-                            if (indexEmpties.containsKey(indexPath)) {
-                                EmptiesPackage emptiesForIndex = indexEmpties.get(indexPath);
-                                indexEmpty = emptiesForIndex.getEmptyRemember(10);
-                            }
-                            else {
-                                try {
-                                    EmptiesPackage emptiesPackage = BaseOperationService.getEmpties(
-                                        null,
-                                        folderPath + "/" + value + ".empties",
-                                        table.getRandom()
-                                    );
-                                    if (emptiesPackage != null) {
-                                        indexEmpties.put(indexPath, emptiesPackage);
-                                        indexEmpty = emptiesPackage.getEmptyRemember(10);
-                                    }
-                                } catch (IOException e) {
-                                    throw new DavaException(INDEX_READ_ERROR, "Error getting empties for index: " + indexPath,  e);
-                                }
-                            }
-                        }
 
                         // add to batch
                         batch.addIndexWritePackage(
                             indexPath,
                             new IndexWritePackage(
                                 writePackage.getRoute(),
-                                indexEmpty,
                                 column,
                                 value,
                                 folderPath
@@ -230,29 +182,7 @@ public class Insert {
                     }
                 }
             });
-        batch.setIndexEmpties(indexEmpties);
         return batch;
-    }
-
-    public Object getValue(Map.Entry<String, Object> columnValue, Column<?> column) {
-        Object value = columnValue.getValue();
-
-        // if it's a date get the local data version
-        if (Date.isDateSupportedDateType(column.getType() )) {
-            value = Date.of(
-                value.toString(),
-                table.getColumn(columnValue.getKey()).getType()
-            ).getDateWithoutTime().toString();
-        }
-
-        // limit file name less than 255 bytes for ext4 file system
-        value = value.toString();
-        byte[] bytes = value.toString().getBytes();
-        if (bytes.length > 240) {
-            value = HashUtil.hashToUUID(bytes);
-        }
-
-        return value;
     }
 
 
@@ -263,26 +193,32 @@ public class Insert {
     private void batchWriteToIndices(Map<String, List<IndexWritePackage>> indexWritePackages) {
 
         Map<String, Long> numericCounts = new HashMap<>();
+        Map<String, Long> countUpdates = new HashMap<>();
 
-        indexWritePackages.values().forEach( indexPackages -> {
+        indexWritePackages.forEach( (indexPath, indexPackages) -> {
                 IndexWritePackage first = indexPackages.get(0);
                 String folderPath = first.getFolderPath();
                 Object value = first.getValue();
                 Column<?> column = table.getColumn(first.getColumnName());
 
                 if ( TypeUtil.isNumericClass(indexPackages.get(0).getColumnType() ) ) {
-                    if (!FileUtil.exists(folderPath + "/" + value + ".index")) {
-                        BaseOperationService.incrementNumericCountFile(folderPath);
+                    if (!FileUtil.exists(indexPath)) {
+                        long current = countUpdates.getOrDefault(folderPath, 0L);
+                        countUpdates.put(folderPath, current + 1);
                     }
                     BaseOperationService.addToIndex(folderPath, value, indexPackages, column.isUnique());
                     boolean repartitioned = BaseOperationService.repartitionIfNeeded(folderPath, numericCounts);
-                    if (repartitioned)
+                    if (repartitioned) {
                         table.initColumnLeaves();
+                        countUpdates.remove(folderPath);
+                    }
                 }
                 else {
                     BaseOperationService.addToIndex(folderPath, value, indexPackages, column.isUnique());
                 }
             });
+
+        countUpdates.forEach(BaseOperationService::updateNumericCountFile);
     }
 
     private void addToTable(Table<?> table, String partition, List<RowWritePackage> writePackages) {
@@ -297,7 +233,7 @@ public class Insert {
             // update table row count in empties
             long oldSize = table.getSize(partition);
             long newSize = oldSize + writePackages.size();
-            table.setSize(partition, oldSize, newSize);
+            table.setSize(partition, newSize);
 
         } catch (IOException e) {
             throw new DavaException(

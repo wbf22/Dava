@@ -2,6 +2,7 @@ package org.dava.core.sql.objects.logic.operators;
 
 import org.dava.core.database.objects.database.structure.Database;
 import org.dava.core.database.objects.database.structure.Row;
+import org.dava.core.database.objects.database.structure.Table;
 import org.dava.core.sql.objects.conditions.Condition;
 
 import java.util.List;
@@ -26,17 +27,17 @@ public class And implements Condition, Operator{
      * WHERE name='bob' AND (price=40.00 AND date='12/04/2024')
      */
     @Override
-    public List<Row> retrieve(Database database, List<Condition> parentFilters, String from, Long limit, Long offset) {
+    public List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Long limit, Long offset) {
         // find most restricting condition first
-        Condition mostRestrictingCondition = findMostRestrictingCondition(database, from);
+        Condition mostRestrictingCondition = findMostRestrictingCondition(table);
         parentFilters.add(this);
 
-        return mostRestrictingCondition.retrieve(database, parentFilters, from, limit, offset);
+        return mostRestrictingCondition.retrieve(table, parentFilters, limit, offset);
     }
 
-    private Condition findMostRestrictingCondition(Database database, String from) {
-        Long leftCount = leftCondition.getCountEstimate(database, from);
-        Long rightCount = rightCondition.getCountEstimate(database, from);
+    private Condition findMostRestrictingCondition(Table<?> table) {
+        Long leftCount = leftCondition.getCountEstimate(table);
+        Long rightCount = rightCondition.getCountEstimate(table);
         Condition mostRestrictingCondition;
         if (leftCount != null && rightCount != null) {
             mostRestrictingCondition = (leftCount <= rightCount)? leftCondition : rightCondition;
@@ -53,9 +54,9 @@ public class And implements Condition, Operator{
 
 
     @Override
-    public Long getCountEstimate(Database database, String from) {
-        Long leftCount = leftCondition.getCountEstimate(database, from);
-        Long rightCount = rightCondition.getCountEstimate(database, from);
+    public Long getCountEstimate(Table<?> table) {
+        Long leftCount = leftCondition.getCountEstimate(table);
+        Long rightCount = rightCondition.getCountEstimate(table);
         if (leftCount != null && rightCount != null) {
             return (leftCount <= rightCount)? leftCount : rightCount;
         }

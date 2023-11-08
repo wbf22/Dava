@@ -1,5 +1,6 @@
 package org.dava.core.database.objects.database.structure;
 
+import org.dava.common.HashUtil;
 import org.dava.common.TypeUtil;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.service.BaseOperationService;
@@ -9,40 +10,54 @@ import java.io.File;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
+
+import static org.dava.common.Checks.safeCast;
 
 public class Index {
 
 
 
-    public static String buildIndexPath(String databaseRoot, String tableName, String partition, Column<?> column, List<File> columnLeaves, String value) {
-        return buildIndexRootPath(databaseRoot, tableName, partition, column, columnLeaves, value) + "/" + value + ".index";
+    public static String buildIndexPath(Table<?> table, String partition, String columnName, Object value) {
+
+        Column<?> column = table.getColumn(columnName);
+        String folderPath = buildIndexRootPath(table.getDatabaseRoot(), table, partition, column, value);
+
+        return buildIndexPath(folderPath, value, column);
     }
 
-    public static String buildIndexPath(String indexRootPath, String value) {
-        return indexRootPath + "/" + value + ".index";
+    public static String buildIndexPath(String folderPath, Object value, Column<?> column) {
+        Object valueObj = prepareValueForIndexName(value, column);
+        return indexPathBypass(folderPath, valueObj);
     }
 
-    public static String buildIndexRootPath(String databaseRoot, String tableName, String partition, Column<?> column, List<File> columnLeaves, Object value) {
+    public static String indexPathBypass(String folderPath, Object preparedValueForIndexName) {
+        return folderPath + "/" + preparedValueForIndexName + ".index";
+    }
+
+    public static String buildIndexRootPath(String databaseRoot, Table<?> table, String partition, Column<?> column, Object value) {
         if ( value instanceof Date<?> || Date.isDateSupportedDateType(column.getType()) ) {
-            Date<?> date = (value instanceof Date<?> dateFromValue)? dateFromValue : Date.of(value.toString(), column.getType());
-            return buildIndexYearFolderForDate(databaseRoot, tableName, partition, column.getName(), date.getYear().toString());
+            Date<?> date = (value instanceof Date<?> dateFromValue)? dateFromValue : Date.ofOrLocalDateOnFailure(value.toString(), column.getType());
+            return buildIndexYearFolderForDate(table, partition, column.getName(), date.getYear().toString());
         }
         else if ( TypeUtil.isNumericClass(column.getType()) ) {
+            List<File> columnLeaves = table.getLeafList(partition, column.getName());
+
             return findIndexPathForNumber(
                 databaseRoot,
-                tableName,
+                table.getTableName(),
                 partition,
                 column.getName(),
                 columnLeaves,
                 new BigDecimal( value.toString() )
             );
         }
-        return buildColumnPath(databaseRoot, tableName, partition, column.getName());
+        return buildColumnPath(databaseRoot, table.getTableName(), partition, column.getName());
     }
 
-    public static String buildIndexYearFolderForDate(String databaseRoot, String tableName, String partition, String columnName, String year) {
-        return buildColumnPath(databaseRoot, tableName, partition, columnName) + "/" + year;
+    public static String buildIndexYearFolderForDate(Table<?> table, String partition, String columnName, String year) {
+        return buildColumnPath(table.getDatabaseRoot(), table.getTableName(), partition, columnName) + "/" + year;
     }
 
     public static String buildIndexPathForDate(String databaseRoot, String tableName, String partition, String columnName, LocalDate localDate) {
@@ -91,6 +106,32 @@ public class Index {
 
     public static String buildColumnPath(String databaseRoot, String tableName, String partition, String columnName) {
         return databaseRoot + "/" + tableName + "/META_" + partition + "/" + columnName;
+    }
+
+
+
+    public static Object prepareValueForIndexName(Object value, Column<?> column) {
+
+        // if it's a date get the local data version
+        if (Date.isDateSupportedDateType(column.getType() )) {
+
+            if ( Date.isDateSupportedDateType( value.getClass() ) )
+                value = safeCast(value, Date.class).getDateWithoutTime();
+            else
+                value = Date.ofOrLocalDateOnFailure(
+                    value.toString(),
+                    column.getType()
+                ).getDateWithoutTime().toString();
+        }
+
+        // limit file name less than 255 bytes for ext4 file system
+        value = value.toString();
+        byte[] bytes = value.toString().getBytes();
+        if (bytes.length > 240) {
+            value = HashUtil.hashToUUID(bytes);
+        }
+
+        return value;
     }
 
 }

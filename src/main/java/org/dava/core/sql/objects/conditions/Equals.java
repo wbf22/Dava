@@ -28,49 +28,42 @@ public class Equals implements Condition {
     }
 
     @Override
-    public List<Row> retrieve(Database database, List<Condition> parentFilters, String from, Long limit, Long offset) {
-
-        List<Row> rows;
-        if (limit == null && offset == null) {
-            Table<?> table = database.getTableByName(from);
-            rows = database.getTableByName(from).getPartitions().parallelStream()
-                    .flatMap(partition -> {
-                        String indexPath = Index.buildIndexPath(database.getRootDirectory(), from, partition, table.getColumn(column), table.getLeafList(partition, column), value);
-                        return BaseOperationService.getAllRowsFromIndex(indexPath, partition, database, from).stream()
-                                .filter(row -> parentFilters.parallelStream().allMatch(condition -> condition.filter(row)));
-                    })
-                    .toList();
-        }
-        else {
-            rows = getRowsLimited(
-                    database,
-                    parentFilters,
-                    from,
-                    limit,
-                    offset,
-                    (startRow, rowsPerIteration) -> BaseOperationService.getRowsFromTable(
-                            database,
-                            from,
-                            column,
-                            value,
-                            startRow,
-                            startRow + rowsPerIteration
-                    )
-            );
-        }
-
-        return rows;
+    public List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Long limit, Long offset) {
+        return retrieve(
+            table,
+            parentFilters,
+            column,
+            () -> getRows(
+                table,
+                column,
+                value,
+                parentFilters
+            ),
+            (startRow, rowsPerIteration) -> BaseOperationService.getRowsFromTable(
+                table,
+                column,
+                value,
+                startRow,
+                startRow + rowsPerIteration
+            ),
+            limit,
+            offset
+        );
     }
 
     @Override
-    public Long getCountEstimate(Database database, String from) {
-        Table<?> table = database.getTableByName(from);
+    public Long getCountEstimate(Table<?> table) {
         Column<?> columnObj = table.getColumn(column);
         if (columnObj.isIndexed()) {
             return table.getPartitions().parallelStream()
                 .map(partition ->
                          getCountForIndexPath(
-                             Index.buildIndexPath(database.getRootDirectory(), from, partition, table.getColumn(column), table.getLeafList(partition, column), value)
+                             Index.buildIndexPath(
+                                 table,
+                                 partition,
+                                 column,
+                                 value
+                             )
                          )
                 )
                 .reduce(Long::sum)
