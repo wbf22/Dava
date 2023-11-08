@@ -35,7 +35,7 @@ class OperationServiceTest {
 
     static Database database;
     static int ITERATIONS = 1000;
-    static Level logLevel = Level.DEBUG;
+    static Level logLevel = Level.INFO;
 //    static String DB_ROOT = "/Users/brandon.fowler/Desktop/db";
     static Mode TABLE_MODE = Mode.MANUAL;
     static String DB_ROOT = "db";
