@@ -1,6 +1,7 @@
 package org.dava.core.database.service.fileaccess;
 
 import org.dava.core.database.service.objects.WritePackage;
+import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -126,6 +127,26 @@ public class FileUtil {
 
             // Write data at the current position
             file.write(data);
+        }
+    }
+
+    public static void changeCount(String filePath, long position, long change, int countByteLength) throws IOException {
+
+        try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
+            // Move to the desired position in the file
+            file.seek(position);
+
+            // read the current count
+            byte[] buffer = new byte[countByteLength];
+            int bytesRead = file.read(buffer);
+
+            long newCount = TypeToByteUtil.byteArrayToLong(buffer) + change;
+
+            byte[] newCountbytes = TypeToByteUtil.longToByteArray(newCount);
+
+            // Write data at the current position
+            file.seek(position);
+            file.write(newCountbytes);
         }
     }
 
@@ -288,6 +309,17 @@ public class FileUtil {
         return files;
     }
 
+    public static long getSubFilesAndFolderCount(String directory) throws IOException {
+        Path dir = Paths.get(directory);
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
+            int count = 0;
+            for (Path ignored : stream) {
+                count++;
+            }
+            return count;
+        }
+    }
+
     public static boolean exists(String filePath) {
         File file = new File(filePath);
         return file.exists();
@@ -298,7 +330,7 @@ public class FileUtil {
         return file.length();
     }
 
-    public static void popBytes(String filePath, int bytesToPop, List<Long> startBytes) throws IOException {
+    public static long popBytes(String filePath, int bytesToPop, List<Long> startBytes) throws IOException {
         File file = new File(filePath);
         startBytes.sort(Long::compareTo);
 
@@ -331,6 +363,7 @@ public class FileUtil {
                 }
 
             }
+            return raf.length();
         }
     }
 
