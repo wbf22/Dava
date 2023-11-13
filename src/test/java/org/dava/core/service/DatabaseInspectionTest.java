@@ -26,6 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.dava.common.Checks.safeCast;
@@ -86,7 +87,9 @@ class DatabaseInspectionTest {
         Table<?> table = database.getTableByName("Order");
         String partition = table.getRandomPartition();
 
-        String empties = BaseOperationService.getAllEmpties(table.emptiesFilePath(partition)).getRemaingingEmptiesString();
+        String empties = BaseOperationService.getAllEmpties(table.emptiesFilePath(partition)).stream()
+            .map(Object::toString)
+            .collect(Collectors.joining());
         log.info(empties);
 
 

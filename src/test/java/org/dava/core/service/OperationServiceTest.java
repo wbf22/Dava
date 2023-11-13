@@ -5,15 +5,14 @@ import org.dava.common.logger.Level;
 import org.dava.common.logger.Logger;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.OffsetDate;
-import org.dava.core.database.service.BaseOperationService;
-import org.dava.core.database.service.Delete;
-import org.dava.core.database.service.Insert;
-import org.dava.core.database.service.MarshallingService;
+import org.dava.core.database.service.*;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.sql.objects.conditions.After;
+import org.dava.core.sql.objects.conditions.All;
 import org.dava.core.sql.objects.conditions.Before;
 import org.dava.core.sql.objects.conditions.Equals;
 import org.dava.core.sql.objects.logic.operators.And;
+import org.dava.external.DavaTSID;
 import org.dava.external.Order;
 import org.dava.common.Timer;
 import org.junit.jupiter.api.BeforeEach;
@@ -37,7 +36,7 @@ class OperationServiceTest {
     static int ITERATIONS = 1000;
     static Level logLevel = Level.INFO;
 //    static String DB_ROOT = "/Users/brandon.fowler/Desktop/db";
-    static Mode TABLE_MODE = Mode.MANUAL;
+    static Mode TABLE_MODE = Mode.INDEX_ALL;
     static String DB_ROOT = "db";
     static Long seed = -183502108378805369L;
     private static final Logger log = Logger.getLogger(OperationServiceTest.class.getName());
@@ -89,7 +88,7 @@ class OperationServiceTest {
                 time = (random.nextBoolean())? time.withOffsetSameInstant(ZoneOffset.UTC) : time;
 //            time = time.withOffsetSameInstant(ZoneOffset.UTC);
                 Order orderTable = new Order(
-                    UUID.nameUUIDFromBytes(String.valueOf(seed + i).getBytes()).toString(),
+                    DavaTSID.generateId("order"),
                     "This is a long description. A lot of tables could have something like this, so this will be a good test.",
                     BigDecimal.valueOf(Math.abs(random.nextLong(0, 100))),
                     BigDecimal.valueOf(Math.abs(random.nextLong(0, 5))),
@@ -125,7 +124,7 @@ class OperationServiceTest {
         Table<?> table = database.getTableByName("Order");
 
         rows.forEach(row -> {
-            log.debug(Row.serialize(table, row.getColumnsToValues()));
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
 
         Insert insert = new Insert(database, table, table.getRandomPartition());
@@ -270,6 +269,12 @@ class OperationServiceTest {
         Delete delete = new Delete(database, table);
         delete.delete(rows);
 
+        Equals equals = new Equals("discount", "4");
+        List<Row> postDeleteRows = equals.retrieve(table, new ArrayList<>(), null, null);
+        postDeleteRows.forEach( row -> {
+            OffsetDate rowDate = OffsetDate.of(row.getValue("time").toString());
+            rowDate.isAfter(date);
+        });
 
         OffsetDate andDate = OffsetDate.of(OffsetDateTime.now().minusYears(1));
         And and = new And(
@@ -288,6 +293,81 @@ class OperationServiceTest {
         });
 
 
+    }
+
+    @Test
+    void rollback() {
+        Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+        long intialSize = table.getSize(partition);
+
+
+        // do insert
+        int INSERT_ITERATIONS = 100;
+        List<Row> rows = makeRows(seed + ITERATIONS, INSERT_ITERATIONS);
+        rows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        Insert insert = new Insert(database, table, partition);
+        insert.insert(rows);
+
+        // get all rows
+        List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
+
+        // rollback
+        Timer timer = Timer.start();
+        Rollback rollback = new Rollback();
+        rollback.rollback(table, partition, table.getRollbackPath(partition));
+        timer.printRestart();
+
+        // get all rows
+        List<Row> allRowAfter = new All().retrieve(table, List.of(), null, null);
+
+        long size = table.getSize(partition);
+        assertEquals(intialSize, size);
+
+
+
+    }
+
+
+
+
+
+    @Test
+    void repetitive_reads() {
+        Table<?> table = database.getTableByName("Order");
+        OffsetDate date = OffsetDate.of(OffsetDateTime.now().minusYears(10).toString());
+        Before<OffsetDate> before = new Before<>(
+            "time",
+            date,
+            true
+        );
+
+        // warm up
+        for (int i = 0; i < 10; i++) {
+            List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
+        }
+
+        Timer timer;
+
+        // with cache
+        timer = Timer.start();
+        for (int i = 0; i < 10; i++) {
+            List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
+        }
+        timer.printRestart();
+
+        // without using cache
+        timer = Timer.start();
+        for (int i = 0; i < 10; i++) {
+            FileUtil.invalidateCache();
+            List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
+        }
+        timer.printRestart();
+
+
+        assertTrue(true);
     }
 
 

@@ -112,4 +112,22 @@ public class Row {
     public IndexRoute getLocationInTable() {
         return locationInTable;
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        Row row = (Row) o;
+        return row.getColumnsToValues().entrySet().stream()
+            .map( entry -> {
+                String columnName = entry.getKey();
+                String value = entry.getValue().toString();
+                String thisValue = this.columnsToValues.get(columnName).toString();
+
+                return value.equals(thisValue);
+            })
+            .reduce(Boolean::logicalAnd)
+            .orElse(false);
+   }
+
 }

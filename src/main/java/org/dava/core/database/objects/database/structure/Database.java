@@ -32,6 +32,8 @@ public class Database {
 
 
 
+
+
     @SuppressWarnings("unchecked")
     public <T> Table<T> getTableForRow(T row) {
         org.dava.external.annotations.Table annotation = row.getClass().getAnnotation(
@@ -83,5 +85,65 @@ public class Database {
      */
     public String getRootDirectory() {
         return rootDirectory;
+    }
+
+
+
+    public static class Builder {
+        private String builderRootDirectory;
+        private List<Class<?>> tableClasses;
+        private List<Mode> tableModes;
+        private long randomSeed;
+
+        /**
+         * This builder is used to set up Dava database. This builder
+         * uses any existing database and tables in the same path, or
+         * if they don't exist, it creates new ones. A good way to use
+         * this is by creating a global variable holding your database
+         * object every time your app starts up.
+         * @param rootDirectory this value specifies the folder where
+         *                      your database should be created. Under
+         *                      this each table will have its own folder.
+         *                      NEVER modify table folders UNLESS the table
+         *                      is run in LIGHT mode.
+         */
+        public Builder(String rootDirectory) {
+            this.builderRootDirectory = rootDirectory;
+            this.randomSeed = 0L;
+        }
+
+        /**
+         * This builder is used to set up Dava database. This builder
+         * uses any existing database and tables in the same path, or
+         * if they don't exist, it creates new ones. A good way to use
+         * this is by creating a global variable holding your database
+         * object every time your app starts up.
+         * @param rootDirectory this value specifies the folder where
+         *                      your database should be created. Under
+         *                      this each table will have its own folder.
+         *                      NEVER modify table folders UNLESS the table
+         *                      is run in LIGHT mode.
+         * @param randomSeed each table that is partitioned has a random
+         *                   generator to select a random partition used
+         *                   on
+         */
+        public Builder(String rootDirectory, long randomSeed) {
+            this.builderRootDirectory = rootDirectory;
+            this.randomSeed = randomSeed;
+        }
+
+        public Builder withTableFromClass(Class<?> tableClass, Mode tableMode) {
+            tableClasses.add(tableClass);
+            tableModes.add(tableMode);
+            return this;
+        }
+
+        public Builder withFieldB(String fieldB) {
+            return this;
+        }
+
+        public Database build() {
+            return new Database(builderRootDirectory, tableClasses, tableModes, randomSeed);
+        }
     }
 }

@@ -137,6 +137,22 @@ public class BaseOperationService {
 
     }
 
+    public static List<Row> getRowsFromTable(Table<?> table, long startRow, Long endRow) {
+
+        return table.getPartitions().parallelStream()
+            .flatMap(partition ->
+                         getAllLinesWithoutRoutes(
+                             table,
+                             partition,
+                             row -> true,
+                             startRow,
+                             endRow
+                         )
+            )
+            .toList();
+    }
+
+
     private static Stream<Row> getAllLinesWithoutRoutes(Table<?> table, String partition, Predicate<Row> filter, long startRow, Long endRow) {
         try {
             Integer end = (endRow == null)? Integer.MAX_VALUE : Math.toIntExact(endRow);
@@ -239,7 +255,7 @@ public class BaseOperationService {
                             Arrays.stream(FileUtil.listFiles(
                                 Index.buildIndexYearFolderForDate(table, partition, columnName, Integer.toString(folderYear))
                             ))
-                            .flatMap( indexFile -> getRowsFromTable( table, columnName, indexFile.getName(), 0, null ).stream() )
+                            .flatMap( indexFile -> getRowsFromTable( table, columnName, indexFile.getName().split("\\.")[0], 0, null ).stream() )
                             .toList()
                         );
                     }
@@ -249,7 +265,7 @@ public class BaseOperationService {
                                 Index.buildIndexYearFolderForDate(table, partition, columnName, Integer.toString(folderYear))
                             ))
                             .flatMap( localDateIndexFile -> {
-                                Date<?> indexLocateDate = Date.of(localDateIndexFile.getName().split("\\.")[0], column.getType());
+                                Date<?> indexLocateDate = Date.ofOrLocalDateOnFailure(localDateIndexFile.getName().split("\\.")[0], column.getType());
 
                                 if ( compareDatesRowYearDateYear.test(indexLocateDate, date) ) {
                                     return getRowsFromTable( table, columnName, indexLocateDate.toString(), 0, null ).stream();
@@ -590,19 +606,19 @@ public class BaseOperationService {
         Table meta data
      */
 
-    public static void popRoutes(String emptiesFile, List<Empty> emptiesPackages) throws IOException {
+    public static void popRoutes(String emptiesFile, List<IndexRoute> emptiesPackages) throws IOException {
 
         if (emptiesPackages.isEmpty())
             return;
 
         List<Long> startBytes = emptiesPackages.stream()
-            .map(Empty::getStartByte)
+            .map(IndexRoute::getOffsetInTable)
             .toList();
 
         FileUtil.popBytes(emptiesFile, 10, startBytes);
     }
 
-    public static EmptiesPackage getAllEmpties(String emptiesFile) throws IOException {
+    public static List<IndexRoute> getAllEmpties(String emptiesFile) throws IOException {
         // TODO don't check for empties every time to avoid this costly file access
         long fileSize = FileUtil.fileSize(emptiesFile);
         if ( fileSize - 10 <= 8) {
@@ -612,20 +628,10 @@ public class BaseOperationService {
         EmptiesPackage emptiesPackages = new EmptiesPackage();
 
         byte[] bytes = FileUtil.readBytes(emptiesFile);
-        List<IndexRoute> routes = IndexRoute.parseBytes(
+        return IndexRoute.parseBytes(
             ArrayUtil.subRange(bytes, 8, bytes.length),
             null
         );
-
-        routes.forEach( route ->
-            emptiesPackages.addEmpty(
-                new Empty(
-                    route,
-                    route.getOffsetInTable()
-                )
-            ));
-
-        return emptiesPackages;
     }
 
 

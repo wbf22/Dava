@@ -55,24 +55,28 @@ public abstract class DateCondition<T extends Date<?>> implements Condition {
     public Long getCountEstimate(Table<?> table) {
         Column<?> columnObj = table.getColumn(columnName);
         if (columnObj.isIndexed()) {
-            List<Integer> yearfolders = BaseOperationService.getYearDateFolders(
-                table,
-                columnName,
-                date,
-                compareYearsFolderToYearDateYear,
-                descending
-            );
+            return table.getPartitions().parallelStream()
+                .map(partition -> {
+                    List<Integer> yearfolders = BaseOperationService.getYearDateFolders(
+                        table,
+                        columnName,
+                        date,
+                        compareYearsFolderToYearDateYear,
+                        descending
+                    );
 
-            String path = Index.buildColumnPath(table.getDatabaseRoot(), table.getTableName(), table.getRandomPartition(), columnName);
-            path += "/" + yearfolders.get(yearfolders.size() - 1);
-            File[] subDirs = FileUtil.listFiles(path);
-            path = subDirs[0].getPath();
-            File[] subDateIndices = FileUtil.listFiles(path);
-            long count = getCountForIndexPath(
-                subDateIndices[0].getPath()
-            );
+                    String path = Index.buildColumnPath(table.getDatabaseRoot(), table.getTableName(), partition, columnName);
+                    path += "/" + yearfolders.get(yearfolders.size() - 1);
+                    File[] subDirs = FileUtil.listFiles(path);
+                    path = subDirs[0].getPath();
+                    long count = getCountForIndexPath(
+                        path
+                    );
 
-            return count * yearfolders.size() * subDirs.length * subDateIndices.length;
+                    return count * yearfolders.size() * subDirs.length * count;
+                })
+                .reduce(Long::sum)
+                .orElse(0L);
         }
         return null;
     }

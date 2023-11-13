@@ -8,6 +8,7 @@ import org.dava.core.database.service.fileaccess.FileUtil;
 
 import java.io.File;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -125,13 +126,13 @@ public class Index {
         }
 
         // limit file name less than 255 bytes for ext4 file system
-        value = value.toString();
-        byte[] bytes = value.toString().getBytes();
-        if (bytes.length > 240) {
-            value = HashUtil.hashToUUID(bytes);
+        String strValue = value.toString();
+        if (strValue.length() > 50  || strValue.contains(";")) {
+            value = HashUtil.hashToUUID(strValue.getBytes(StandardCharsets.UTF_8));
         }
 
         return value;
     }
+
 
 }

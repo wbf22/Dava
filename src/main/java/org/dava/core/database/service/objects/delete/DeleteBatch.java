@@ -2,6 +2,7 @@ package org.dava.core.database.service.objects.delete;
 
 import org.dava.core.database.objects.database.structure.Row;
 import org.dava.core.database.objects.database.structure.Table;
+import org.dava.core.database.service.objects.Batch;
 
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,9 @@ public class DeleteBatch {
     private Map<String, IndexDelete> indexPathToIndicesToDelete;
     private Map<String, CountChange> numericCountFileChanges;
 
+    public static Batch parse(List<String> lines) {
+        return null;
+    }
 
 
     public String getRollbackString(Table<?> table, String partition) {

@@ -14,8 +14,9 @@
 - Multiple table constraints, cascade etc...
 - Have create and modified date for each row?
 - Consider cleaning up table or logging something if empties file is huge
-- Could be fun to make a little id generator
-- Handle FileUtil cache getting too big
+- Spatial Queries for geo locations?
+- graph based database?
+- handle partitioning when table is too large
 
 # ToTest
 - queries without limit's or offsets

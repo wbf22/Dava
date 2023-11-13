@@ -93,9 +93,7 @@ public class Delete {
         List<Object> emptiesWrites = new ArrayList<>();
         batch.getRows().forEach( row -> {
             IndexRoute location = row.getLocationInTable();
-            byte[] whitespaceBytes = new byte[location.getLengthInTable()];
-            Arrays.fill(whitespaceBytes, (byte) 32);
-            whitespaceBytes[location.getLengthInTable() - 1] = '\n';
+            byte[] whitespaceBytes = Table.getWhitespaceBytes(location.getLengthInTable());
             overwritePackages.add(
                 new WritePackage(location.getOffsetInTable(), whitespaceBytes)
             );
@@ -111,14 +109,9 @@ public class Delete {
                 overwritePackages
             );
 
-            FileUtil.writeBytes(
+            FileUtil.writeBytesAppend(
                 table.emptiesFilePath(partition),
-                List.of(
-                    new WritePackage(
-                        8L,
-                        ArrayUtil.appendArrays(emptiesWrites, 10)
-                    )
-                )
+                ArrayUtil.appendArrays(emptiesWrites, 10)
             );
         } catch (IOException e) {
             throw new DavaException(BASE_IO_ERROR, "Error deleting rows from table", e);
@@ -150,6 +143,7 @@ public class Delete {
         });
 
     }
+
 
     private void performDeleteLightMode(DeleteBatch batch, String partition) {
 

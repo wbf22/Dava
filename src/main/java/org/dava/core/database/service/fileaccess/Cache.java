@@ -10,6 +10,9 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class Cache {
 
+    private static final int MAX_CACHE_SIZE = 1000000;
+    private static final int MAX_RESOURCE_SIZE = 1000;
+
     private Map<String, Map<String, Object>> pathCache = new ConcurrentHashMap<>();
 
 
@@ -38,7 +41,6 @@ public class Cache {
      */
     public <T, E extends Exception> T get(String resourceName, String operationHash, CheckedSupplier<T, E> resourceCall) throws E {
 
-        // TODO handle cache getting too big
         if (pathCache.containsKey(resourceName)) {
             Map<String, Object> resource = pathCache.get(resourceName);
             if (resource.containsKey(operationHash))
@@ -47,10 +49,20 @@ public class Cache {
 
         T result = resourceCall.get();
 
-        if (pathCache.containsKey(resourceName))
+        if (pathCache.containsKey(resourceName)) {
             pathCache.get(resourceName).put(operationHash, result);
-        else
-            pathCache.put(resourceName, new HashMap<>(Map.of(operationHash, result)));
+            // handle cache getting too big
+            if (pathCache.get(resourceName).size() > MAX_RESOURCE_SIZE) invalidate(resourceName);
+        }
+        else {
+            Map<String, Object> resourceMap = new HashMap<>();
+            resourceMap.put(operationHash, result);
+            pathCache.put(resourceName, resourceMap);
+        }
+
+
+        // handle cache getting too big
+        if (pathCache.size() > MAX_CACHE_SIZE) invalidateCache();
 
         return result;
     }

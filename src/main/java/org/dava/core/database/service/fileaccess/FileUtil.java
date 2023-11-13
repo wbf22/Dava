@@ -193,7 +193,6 @@ public class FileUtil {
 
     /**
      * writes the writePackages.
-     *
      * Also updates null offsets in packages to the end of the table at insert
      */
     public static void writeBytes(String filePath, List<WritePackage> writePackages) throws IOException {
@@ -213,6 +212,35 @@ public class FileUtil {
                         throw new RuntimeException(e);
                     }
                 });
+        }
+    }
+
+
+    /**
+     * writes the writePackages if they are within the length of the file
+     * Also updates null offsets in packages to the end of the table at insert
+     */
+    public static void writeBytesIfPossible(String filePath, List<WritePackage> writePackages) throws IOException {
+        cache.invalidate(filePath);
+
+        try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
+            long fileSize = file.length();
+
+            writePackages.forEach( writePackage -> {
+                try {
+                    // Move to the desired position in the file
+                    long offset = (writePackage.getOffsetInTable() == null)? file.length() : writePackage.getOffsetInTable();
+
+                    if (offset < fileSize) {
+                        file.seek(offset);
+
+                        // Write data at the current position
+                        file.write( writePackage.getData() );
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         }
     }
 

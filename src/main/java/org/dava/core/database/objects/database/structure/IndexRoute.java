@@ -100,6 +100,7 @@ public class IndexRoute {
     }
 
 
+    // these are important for ensuring rollbacks work as well as other functionality
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -107,6 +108,12 @@ public class IndexRoute {
         IndexRoute route = (IndexRoute) o;
         return Objects.equals(partition, route.partition) && Objects.equals(offsetInTable, route.offsetInTable) && Objects.equals(lengthInTable, route.lengthInTable);
     }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(partition, offsetInTable, lengthInTable);
+    }
+
     @Override
     public String toString() {
         return "IndexRoute{" +

@@ -56,6 +56,9 @@ public abstract class Date<T> implements Comparable<Date<T>> {
     }
 
     public static Date<?> ofOrLocalDateOnFailure(String stringValue, Class<?> type) {
+        // TODO parsing Strings to Dates is actually a bit of a slow down. Consider parsing manually to see if its faster
+        // run OperationServiceTest.repetitive_reads() with profile to see this
+
         Exception error = null;
 
         try {

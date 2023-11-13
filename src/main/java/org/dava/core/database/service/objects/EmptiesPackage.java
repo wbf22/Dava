@@ -1,5 +1,6 @@
 package org.dava.core.database.service.objects;
 
+import org.dava.core.database.objects.database.structure.IndexRoute;
 import org.dava.external.annotations.PrimaryKey;
 
 import java.util.ArrayList;
@@ -10,8 +11,10 @@ import java.util.stream.Collectors;
 
 public class EmptiesPackage {
 
-    private Map<Integer, List<Empty>> remainingEmpties;
-    private Map<Integer, List<Empty>> usedEmpties;
+    private Map<Integer, List<IndexRoute>> remainingEmpties;
+    private Map<Integer, List<IndexRoute>> usedEmpties;
+    private List<IndexRoute> rollbackEmpties;
+
 
 
     /**
@@ -23,12 +26,12 @@ public class EmptiesPackage {
         usedEmpties = new HashMap<>();
     }
 
-    public void addEmpty(Empty empty) {
-        if(remainingEmpties.containsKey(empty.getRoute().getLengthInTable())) {
-            remainingEmpties.get(empty.getRoute().getLengthInTable()).add(empty);
+    public void addEmpty(IndexRoute empty) {
+        if(remainingEmpties.containsKey(empty.getLengthInTable())) {
+            remainingEmpties.get(empty.getLengthInTable()).add(empty);
         }
         else {
-            remainingEmpties.put(empty.getRoute().getLengthInTable(), new ArrayList<>( List.of(empty) ));
+            remainingEmpties.put(empty.getLengthInTable(), new ArrayList<>( List.of(empty) ));
         }
     }
 
@@ -36,10 +39,10 @@ public class EmptiesPackage {
         return remainingEmpties.containsKey(desiredLength);
     }
 
-    public Empty getEmptyRemember(int desiredLength) {
+    public IndexRoute getEmptyRemember(int desiredLength) {
         if (remainingEmpties.containsKey(desiredLength)) {
-            List<Empty> empties = remainingEmpties.get(desiredLength);
-            Empty empty = empties.get(0);
+            List<IndexRoute> empties = remainingEmpties.get(desiredLength);
+            IndexRoute empty = empties.get(0);
             empties = empties.subList(1, empties.size());
 
             if (!empties.isEmpty()) {
@@ -65,15 +68,23 @@ public class EmptiesPackage {
         Getter Setter
      */
 
-    public Map<Integer, List<Empty>> getUsedEmpties() {
+    public Map<Integer, List<IndexRoute>> getUsedEmpties() {
         return usedEmpties;
+    }
+
+    public List<IndexRoute> getRollbackEmpties() {
+        return rollbackEmpties;
+    }
+
+    public void setRollbackEmpties(List<IndexRoute> rollbackEmpties) {
+        this.rollbackEmpties = rollbackEmpties;
     }
 
     public String getRemaingingEmptiesString() {
         return remainingEmpties.values().stream()
             .map( empties ->
                 empties.stream().map(empty ->
-                    empty.getStartByte() + ":" + empty.getRoute().getLengthInTable()
+                     empty.getOffsetInTable() + ":" + empty.getLengthInTable()
                 )
                 .collect(Collectors.joining(";"))
             )

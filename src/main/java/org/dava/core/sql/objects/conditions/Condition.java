@@ -82,40 +82,56 @@ public interface Condition {
             Long offset,
             BiFunction<Long, Long, List<Row>> functionToGetRows
     ) {
-        limit = (limit == null)? Long.MAX_VALUE : limit;
         offset = (offset == null)? 0 : offset;
+        Long endRow;
+        long rowsPerIteration = 0L;
+        if (limit != null) {
+            // get rows based off limit + plus some. More if there are lots of parent filters. Then divide by number of partitions
+            rowsPerIteration = (long) (limit * (1.1 + .2 * parentFilters.size())) / table.getPartitions().size();
+            rowsPerIteration = (rowsPerIteration == 0)? 1 : rowsPerIteration;
+            endRow = rowsPerIteration;
+        }
+        else {
+            endRow = null;
+        }
 
         List<Row> rows = new ArrayList<>();
-        long startRow = 0;
-        // get rows based off limit + plus some. More if there are lots of parent filters. Then divide by number of partitions
-        long rowsPerIteration = (long) (limit * (1.1 + .2 * parentFilters.size())) / table.getPartitions().size();
-        rowsPerIteration = (rowsPerIteration == 0)? 1 : rowsPerIteration;
 
+
+        long startRow = 0;
         boolean done = false;
         while (!done) {
-            List<Row> retrieved = functionToGetRows.apply(startRow, startRow + rowsPerIteration);
-            int size = retrieved.size();
+            List<Row> retrieved = functionToGetRows.apply(startRow, endRow);
 
             retrieved = retrieved.stream()
                     .filter(row -> parentFilters.parallelStream().allMatch(condition -> condition.filter(row)))
                     .toList();
-            startRow += size;
+
+            startRow += retrieved.size();
+            endRow = (endRow == null)? null : startRow + rowsPerIteration;
             rows.addAll(retrieved);
-            done = (rows.size() >= limit + offset) || size < rowsPerIteration;
+            if (limit == null) {
+                done = true;
+            }
+            else {
+                done = (rows.size() >= limit + offset) || retrieved.size() < rowsPerIteration;
+            }
         }
 
         return limit(rows, limit, offset);
     }
 
-    default List<Row> limit(List<Row> rows, long limit, long offset) {
-        if (rows.size() > limit + offset) {
-            return rows.subList(Math.toIntExact(offset), Math.toIntExact(limit));
+    default List<Row> limit(List<Row> rows, Long limit, long offset) {
+        if (limit != null) {
+            if (rows.size() > limit + offset) {
+                return rows.subList(Math.toIntExact(offset), Math.toIntExact(limit));
+            }
         }
-        else {
-            if (offset > rows.size())
-                return new ArrayList<>();
-            return rows.subList(Math.toIntExact(offset), rows.size());
-        }
+
+        if (offset > rows.size())
+            return new ArrayList<>();
+
+        return rows.subList(Math.toIntExact(offset), rows.size());
     }
 
 }

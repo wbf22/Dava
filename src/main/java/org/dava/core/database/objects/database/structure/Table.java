@@ -188,8 +188,14 @@ public class Table<T> {
         String emptiesFile = emptiesFilePath(partition);
 
         try {
-            EmptiesPackage emptiesPackage = BaseOperationService.getAllEmpties(emptiesFile);
-            return (emptiesPackage == null)? new EmptiesPackage() : emptiesPackage;
+            List<IndexRoute> routes = BaseOperationService.getAllEmpties(emptiesFile);
+            EmptiesPackage emptiesPackage = new EmptiesPackage();
+            if (routes == null)
+                return emptiesPackage;
+
+            routes.forEach(emptiesPackage::addEmpty);
+
+            return emptiesPackage;
         } catch (IOException e) {
             throw new DavaException(
                 BASE_IO_ERROR,
@@ -212,10 +218,6 @@ public class Table<T> {
         }
     }
 
-    public void writeEmptyRow(long row) {
-        String partition = getRandomPartition();
-        BaseOperationService.writeLong(emptiesFilePath(partition), row);
-    }
     private String indicesFolder(String partition) {
         return directory + "/META_" + partition;
     }
@@ -284,6 +286,14 @@ public class Table<T> {
     }
 
 
+    public static byte[] getWhitespaceBytes(int length) {
+        byte[] whitespaceBytes = new byte[length];
+        Arrays.fill(whitespaceBytes, (byte) 32);
+        whitespaceBytes[length - 1] = '\n';
+        return whitespaceBytes;
+    }
+
+
 
     /*
     Getter Setters
@@ -298,10 +308,6 @@ public class Table<T> {
 
     public List<String> getPartitions() {
         return partitions;
-    }
-
-    public Random getRandom() {
-        return random;
     }
 
     public Mode getMode() {
