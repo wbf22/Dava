@@ -5,7 +5,6 @@ import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.objects.*;
-import org.dava.core.database.service.objects.insert.InsertBatch;
 import org.dava.core.database.service.objects.insert.IndexWritePackage;
 import org.dava.core.database.service.objects.insert.RowWritePackage;
 
@@ -46,12 +45,12 @@ public class Insert {
         List<RowWritePackage> rowWritePackages = makeWritePackages(rows);
 
         // build batch
-        InsertBatch writeInsertBatch = groupIndexWrites(database, table, rowWritePackages);
+        Batch writeInsertBatch = groupIndexWrites(database, table, rowWritePackages);
         if (table.getMode() != Mode.LIGHT) {
             writeInsertBatch.setNumericRepartitions(determineNumericPartitions(writeInsertBatch) );
-            writeInsertBatch.setTableEmpties(this.rowEmpties);
+            writeInsertBatch.setUsedTableEmtpies(this.rowEmpties);
         }
-        writeInsertBatch.setRowWritePackages(rowWritePackages);
+        writeInsertBatch.setRowsWritten(rowWritePackages);
 
         // build and log rollback
         logRollback(writeInsertBatch, table.getRollbackPath(partition));
@@ -60,10 +59,10 @@ public class Insert {
         performInsert(writeInsertBatch);
     }
 
-    private List<String> determineNumericPartitions(InsertBatch writeInsertBatch) {
+    private List<String> determineNumericPartitions(Batch writeInsertBatch) {
         // TODO decide if this is necessary. It might be fine to not rollback repartitions, however this has no significant cost
         List<String> indexRepartitions = new ArrayList<>();
-        writeInsertBatch.getIndexWriteGroups()
+        writeInsertBatch.getIndexPathToIndicesWritten()
             .forEach( (indexPath, writeGroup) -> {
                 if ( writeGroup.get(0).getColumn().isIndexed() && TypeUtil.isNumericClass(writeGroup.get(0).getColumnType()) ) {
                     String folderPath = writeGroup.get(0).getFolderPath();
@@ -81,28 +80,28 @@ public class Insert {
         return indexRepartitions;
     }
 
-    private void logRollback(InsertBatch writeInsertBatch, String rollbackLogPath) {
+    private void logRollback(Batch writeInsertBatch, String rollbackLogPath) {
         try {
-            String rollback = writeInsertBatch.makeRollbackString();
-            FileUtil.replaceFile(rollbackLogPath, rollback.getBytes() );
+            String rollback = writeInsertBatch.makeRollbackString(table, partition);
+            FileUtil.replaceFile(rollbackLogPath, rollback.getBytes(StandardCharsets.UTF_8) );
         } catch (IOException e) {
             throw new DavaException(ROLLBACK_ERROR, "Error writing to rollback log", e);
         }
     }
 
-    private void performInsert(InsertBatch insertBatch) {
+    private void performInsert(Batch insertBatch) {
 
         // add to table
-        addToTable(table, partition, insertBatch.getRowWritePackages());
+        addToTable(table, partition, insertBatch.getRowsWritten());
 
         // add indexes
-        batchWriteToIndices(insertBatch.getIndexWriteGroups());
+        batchWriteToIndices(insertBatch.getIndexPathToIndicesWritten());
 
         // remove used empties from tables
         try {
             BaseOperationService.popRoutes(
                 table.emptiesFilePath(partition),
-                insertBatch.getTableEmpties().getUsedEmpties()
+                insertBatch.getUsedTableEmtpies().getUsedEmpties()
                     .values()
                     .stream().flatMap(Collection::stream)
                     .toList()
@@ -138,7 +137,7 @@ public class Insert {
                     tableSize += lengthInTable;
                 }
 
-                IndexRoute route = new IndexRoute(
+                Route route = new Route(
                     partition,
                     offset,
                     lengthInTable
@@ -149,8 +148,8 @@ public class Insert {
             .toList();
     }
 
-    private InsertBatch groupIndexWrites(Database database, Table<?> table, List<RowWritePackage> writePackages) {
-        InsertBatch insertBatch = new InsertBatch();
+    private Batch groupIndexWrites(Database database, Table<?> table, List<RowWritePackage> writePackages) {
+        Batch insertBatch = new Batch();
         writePackages.forEach( writePackage -> {
                 Row row = writePackage.getRow();
                 for (Map.Entry<String, Object> columnValue : row.getColumnsToValues().entrySet()) {

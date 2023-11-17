@@ -3,7 +3,6 @@ package org.dava.core.database.service;
 
 import org.dava.common.ArrayUtil;
 import org.dava.common.Bundle;
-import org.dava.common.HashUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
@@ -50,34 +49,14 @@ public class BaseOperationService {
 
             // increment index count and write new routes in index
             String path = folderPath + "/" + value + ".index";
-            long count = 0L;
-            if (FileUtil.exists(path)) {
-                if (isUnique) {
+            if (FileUtil.exists(path) && isUnique) {
                     throw new DavaException(UNIQUE_CONSTRAINT_VIOLATION, "Row already exists with unique value or key: " + value, null);
-                }
-                else {
-                    count = getCountForIndexPath(path);
-                }
             }
-
-            List<WritePackage> writes = (List<WritePackage>) (List<?>) indexWritePackages;
-
-            // write new count, first 8 bytes
-            writes.add(
-                0,
-                new WritePackage(
-                    0L,
-                    TypeToByteUtil.longToByteArray(
-                        count + indexWritePackages.size()
-                    )
-                )
-            );
-
 
             // write indices to index (and also count)
             FileUtil.writeBytes(
                 path,
-                writes
+                (List<WritePackage>) (List<?>) indexWritePackages
             );
         } catch (IOException e) {
             throw new DavaException(
@@ -107,10 +86,10 @@ public class BaseOperationService {
                         value
                     );
 
-                    List<IndexRoute> routes = getRoutes(
+                    List<Route> routes = getRoutes(
                         indexPath,
                         partition,
-                        8 + startRow * 10,
+                        startRow * 10,
                         (endRow == null)? null : (int) (endRow - startRow) * 10
                     ).getSecond();
 
@@ -155,7 +134,7 @@ public class BaseOperationService {
 
     private static Stream<Row> getAllLinesWithoutRoutes(Table<?> table, String partition, Predicate<Row> filter, long startRow, Long endRow) {
         try {
-            Integer end = (endRow == null)? Integer.MAX_VALUE : Math.toIntExact(endRow);
+            int end = (endRow == null)? Integer.MAX_VALUE : Math.toIntExact(endRow);
             byte[] bytes = FileUtil.readBytes(
                 table.getTablePath(partition),
                 0,
@@ -180,7 +159,7 @@ public class BaseOperationService {
                     Row row = new Row(
                         rowString,
                         table,
-                        new IndexRoute(
+                        new Route(
                             partition,
                             offset,
                             rowString.getBytes(StandardCharsets.UTF_8).length + 1
@@ -447,11 +426,14 @@ public class BaseOperationService {
      * Gets IndexRoutes from a file from startByte to numBytes or the end of the file (whichever comes first).
      * If allLines is true then startByte and numBytes are ignored
      */
-    public static Bundle<Long, List<IndexRoute>> getRoutes(String filePath, String partition, Long startByte, Integer numBytes) {
+    public static Bundle<Long, List<Route>> getRoutes(String filePath, String partition, Long startByte, Integer numBytes) {
         try {
 
             byte[] bytes;
             long fileSize = FileUtil.fileSize(filePath);
+            if (fileSize == 0)
+                return new Bundle<>(0L, new ArrayList<>());
+
             numBytes = Math.toIntExact(
                 (numBytes == null || fileSize < numBytes + startByte) ? fileSize - startByte : numBytes
             );
@@ -461,7 +443,7 @@ public class BaseOperationService {
 
             return new Bundle<>(
                 fileSize,
-                IndexRoute.parseBytes(
+                Route.parseBytes(
                     bytes,
                     partition
                 )
@@ -475,16 +457,16 @@ public class BaseOperationService {
         }
     }
 
-    public static List<String> getLinesUsingRoutes(String partition, Table<?> table, List<IndexRoute> rows) {
+    public static List<String> getLinesUsingRoutes(String partition, Table<?> table, List<Route> rows) {
 
         try {
             return FileUtil.readBytes(
                 table.getTablePath(partition),
                 rows.stream()
-                    .map(IndexRoute::getOffsetInTable)
+                    .map(Route::getOffsetInTable)
                     .toList(),
                 rows.stream()
-                    .map(IndexRoute::getLengthInTable)
+                    .map(Route::getLengthInTable)
                     .map(i -> (long) i)
                     .toList()
             )
@@ -502,18 +484,7 @@ public class BaseOperationService {
     }
 
     public static long getCountForIndexPath(String path) {
-        try {
-            return TypeToByteUtil.byteArrayToLong(
-                FileUtil.readBytes(path, 0, 8)
-            );
-        } catch (IOException e) {
-            throw new DavaException(
-                BASE_IO_ERROR,
-                "Error getting index count in: " + path,
-                e
-            );
-        }
-
+        return FileUtil.fileSize(path);
     }
 
     public static void updateNumericCountFile(String folderPath, long change) {
@@ -606,19 +577,19 @@ public class BaseOperationService {
         Table meta data
      */
 
-    public static void popRoutes(String emptiesFile, List<IndexRoute> emptiesPackages) throws IOException {
+    public static void popRoutes(String emptiesFile, List<Route> emptiesPackages) throws IOException {
 
         if (emptiesPackages.isEmpty())
             return;
 
         List<Long> startBytes = emptiesPackages.stream()
-            .map(IndexRoute::getOffsetInTable)
+            .map(Route::getOffsetInTable)
             .toList();
 
         FileUtil.popBytes(emptiesFile, 10, startBytes);
     }
 
-    public static List<IndexRoute> getAllEmpties(String emptiesFile) throws IOException {
+    public static List<Route> getAllEmpties(String emptiesFile) throws IOException {
         // TODO don't check for empties every time to avoid this costly file access
         long fileSize = FileUtil.fileSize(emptiesFile);
         if ( fileSize - 10 <= 8) {
@@ -628,7 +599,7 @@ public class BaseOperationService {
         EmptiesPackage emptiesPackages = new EmptiesPackage();
 
         byte[] bytes = FileUtil.readBytes(emptiesFile);
-        return IndexRoute.parseBytes(
+        return Route.parseBytes(
             ArrayUtil.subRange(bytes, 8, bytes.length),
             null
         );

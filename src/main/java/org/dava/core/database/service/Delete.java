@@ -6,11 +6,10 @@ import org.dava.common.TypeUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
+import org.dava.core.database.service.objects.Batch;
 import org.dava.core.database.service.objects.WritePackage;
 import org.dava.core.database.service.objects.delete.CountChange;
-import org.dava.core.database.service.objects.delete.DeleteBatch;
 import org.dava.core.database.service.objects.delete.IndexDelete;
-import org.dava.core.sql.objects.conditions.Condition;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -18,10 +17,9 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.LongStream;
-import java.util.stream.Stream;
 
-import static java.util.stream.Collectors.toList;
 import static org.dava.core.database.objects.exception.ExceptionType.*;
 
 public class Delete {
@@ -37,18 +35,18 @@ public class Delete {
 
 
     public void delete(List<Row> rows) {
-        Map<String, DeleteBatch> deleteBatchesByPartition = table.getPartitions().parallelStream()
+        Map<String, Batch> deleteBatchesByPartition = table.getPartitions().parallelStream()
             .map(partition -> {
-                DeleteBatch batch = new DeleteBatch();
+                Batch batch = new Batch();
                 batch.setRows(rows);
 
                 // TODO, on light mode neither of these should be needed
                 // determine old table size
-                long tableSize = FileUtil.fileSize(table.getTablePath(partition));
+                long tableSize = table.getSize(partition);
                 batch.setOldTableSize(tableSize);
 
                 // determine old table empties file size
-                long emptiesSize = ( FileUtil.fileSize(table.emptiesFilePath(partition)) - 8L ) /10L;
+                long emptiesSize = FileUtil.fileSize(table.emptiesFilePath(partition));
                 batch.setOldEmptiesSize(emptiesSize);
 
 
@@ -56,7 +54,7 @@ public class Delete {
                 // determine changes to numeric count files
                 Bundle< Map<String, CountChange>, Map<String, IndexDelete> > data = collectIndexData(rows, partition);
                 batch.setNumericCountFileChanges(data.getFirst());
-                batch.setIndexPathToIndicesToDelete(data.getSecond());
+                batch.setIndexPathToInvalidRoutes(data.getSecond());
 
                 return Map.entry(partition, batch);
             })
@@ -65,12 +63,12 @@ public class Delete {
         execute(deleteBatchesByPartition);
     }
 
-    private void execute(Map<String, DeleteBatch> deleteBatchesByPartition) {
+    private void execute(Map<String, Batch> deleteBatchesByPartition) {
         // log rollback
         table.getPartitions().parallelStream().forEach( partition -> {
             try {
-                DeleteBatch batch = deleteBatchesByPartition.get(partition);
-                String rollback = batch.getRollbackString(table, partition);
+                Batch batch = deleteBatchesByPartition.get(partition);
+                String rollback = batch.makeRollbackString(table, partition);
                 FileUtil.replaceFile(table.getRollbackPath(partition), rollback.getBytes() );
             } catch (IOException e) {
                 throw new DavaException(ROLLBACK_ERROR, "Error writing to rollback log", e);
@@ -87,12 +85,12 @@ public class Delete {
             } );
     }
 
-    private void performDelete(DeleteBatch batch, String partition) {
+    private void performDelete(Batch batch, String partition) {
         // whitespace rows in table and add routes to empties
         List<WritePackage> overwritePackages = new ArrayList<>();
         List<Object> emptiesWrites = new ArrayList<>();
         batch.getRows().forEach( row -> {
-            IndexRoute location = row.getLocationInTable();
+            Route location = row.getLocationInTable();
             byte[] whitespaceBytes = Table.getWhitespaceBytes(location.getLengthInTable());
             overwritePackages.add(
                 new WritePackage(location.getOffsetInTable(), whitespaceBytes)
@@ -121,14 +119,14 @@ public class Delete {
         table.setSize(partition, batch.getOldTableSize() - batch.getRows().size());
 
         // delete indices
-        batch.getIndexPathToIndicesToDelete().entrySet().parallelStream()
+        batch.getIndexPathToInvalidRoutes().entrySet().parallelStream()
             .forEach( entry -> {
                 try {
                     String indexPath = entry.getKey();
                     IndexDelete indexDelete = entry.getValue();
 
-                    long newSize = FileUtil.popBytes(indexPath, 10, indexDelete.getRoutesToDelete());
-                    if (newSize == 8)
+                    long newSize = FileUtil.popBytes(indexPath, 10, indexDelete.getIndicesToDelete());
+                    if (newSize == 0)
                         FileUtil.deleteFile(indexPath);
 
                 } catch (IOException e) {
@@ -145,7 +143,7 @@ public class Delete {
     }
 
 
-    private void performDeleteLightMode(DeleteBatch batch, String partition) {
+    private void performDeleteLightMode(Batch batch, String partition) {
 
         // get all rows, and filter by ones in the delete
         List<String> deleteRows = batch.getRows().stream()
@@ -196,19 +194,19 @@ public class Delete {
                         entry.getValue()
                     );
 
-                    Bundle<Long, List<IndexRoute>> bundle = BaseOperationService.getRoutes(
+                    Bundle<Long, List<Route>> bundle = BaseOperationService.getRoutes(
                         indexPath,
                         partition,
-                        8L,
+                        0L,
                         null
                     );
 
                     // figure out which routes (ordered) should be deleted
-                    List<IndexRoute> lines = bundle.getSecond();
+                    List<Route> lines = bundle.getSecond();
                     List<Long> startBytesOfRoutesToDelete = LongStream.range(0, lines.size())
                         .filter(i -> lines.get((int)i).equals(row.getLocationInTable()))
                         .boxed()
-                        .map(i -> i * 10 + 8)
+                        .map(i -> i * 10)
                         .toList();
 
                     if (TypeUtil.isNumericClass(column.getType())) {
@@ -227,7 +225,7 @@ public class Delete {
                         indexPathToIndexDeletes.get(indexPath).addRoutesToDelete(startBytesOfRoutesToDelete);
                     }
                     else {
-                        indexPathToIndexDeletes.put(indexPath, new IndexDelete(startBytesOfRoutesToDelete));
+                        indexPathToIndexDeletes.put(indexPath, new IndexDelete(startBytesOfRoutesToDelete, lines));
                     }
                 }
             }));

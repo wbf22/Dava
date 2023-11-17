@@ -25,11 +25,11 @@ public class FileUtil {
 
 
     public static void writeObjectToFile(String destinationPath, Object object) throws IOException {
-        cache.invalidate(destinationPath);
-
         try ( ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(destinationPath)) ) {
             oos.writeObject(object);
         }
+
+        cache.invalidate(destinationPath);
     }
 
     public static <T> T readObjectFromFile(String filePath, Class<T> objectType) throws IOException {
@@ -137,17 +137,17 @@ public class FileUtil {
     }
 
     public static void writeFile(String desitnationPath, String fileContents) throws IOException {
-        cache.invalidate(desitnationPath);
 
         FileOutputStream fileOutputStream;
         fileOutputStream = new FileOutputStream(desitnationPath);
 
         fileOutputStream.write(fileContents.getBytes(StandardCharsets.UTF_8));
         fileOutputStream.close();
+
+        cache.invalidate(desitnationPath);
     }
 
     public static void writeFile(String filePath, long position, String data) throws IOException {
-        cache.invalidate(filePath);
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             // Move to the desired position in the file
@@ -156,10 +156,11 @@ public class FileUtil {
             // Write data at the current position
             file.write(data.getBytes());
         }
+
+        cache.invalidate(filePath);
     }
 
     public static void writeBytes(String filePath, long position, byte[] data) throws IOException {
-        cache.invalidate(filePath);
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             // Move to the desired position in the file
@@ -168,10 +169,11 @@ public class FileUtil {
             // Write data at the current position
             file.write(data);
         }
+
+        cache.invalidate(filePath);
     }
 
     public static void changeCount(String filePath, long position, long change, int countByteLength) throws IOException {
-        cache.invalidate(filePath);
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             // Move to the desired position in the file
@@ -189,6 +191,8 @@ public class FileUtil {
             file.seek(position);
             file.write(newCountbytes);
         }
+
+        cache.invalidate(filePath);
     }
 
     /**
@@ -196,7 +200,6 @@ public class FileUtil {
      * Also updates null offsets in packages to the end of the table at insert
      */
     public static void writeBytes(String filePath, List<WritePackage> writePackages) throws IOException {
-        cache.invalidate(filePath);
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             writePackages.forEach( writePackage -> {
@@ -213,6 +216,8 @@ public class FileUtil {
                     }
                 });
         }
+
+        cache.invalidate(filePath);
     }
 
 
@@ -221,7 +226,6 @@ public class FileUtil {
      * Also updates null offsets in packages to the end of the table at insert
      */
     public static void writeBytesIfPossible(String filePath, List<WritePackage> writePackages) throws IOException {
-        cache.invalidate(filePath);
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             long fileSize = file.length();
@@ -242,54 +246,65 @@ public class FileUtil {
                 }
             });
         }
+
+        cache.invalidate(filePath);
     }
 
     public static void writeFileAppend(String filePath, String data) throws IOException {
-        cache.invalidate(filePath);
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             file.seek(file.length());
             file.write(data.getBytes());
         }
+
+        cache.invalidate(filePath);
     }
 
     public static void writeBytesAppend(String filePath, byte[] data) throws IOException {
-        cache.invalidate(filePath);
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             file.seek(file.length());
             file.write(data);
         }
+
+        cache.invalidate(filePath);
     }
 
     public static void replaceFile(String filePath, byte[] data) throws IOException {
-        cache.invalidate(filePath);
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             file.setLength( 0 );
             file.write(data);
         }
+
+        cache.invalidate(filePath);
+    }
+
+    public static void truncate(String filePath, Long newSizeInBytes) throws IOException {
+        try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
+            file.setLength( newSizeInBytes );
+        }
+
+        cache.invalidate(filePath);
     }
 
     public static void createParentFolderIfNotExist(String filePath) throws IOException {
-        cache.invalidate(filePath);
 
         Path path = Paths.get(filePath);
         Files.createDirectories(path.getParent());
+
+        cache.invalidate(filePath);
     }
 
     public static void createDirectoriesIfNotExist(String directoryPath) throws IOException {
-        cache.invalidate(directoryPath);
 
         Path path = Paths.get(directoryPath);
         Files.createDirectories(path);
+
+        cache.invalidate(directoryPath);
     }
 
     public static void moveFilesToDirectory(List<File> sourceFiles, String destinationDirectory) throws IOException {
-        sourceFiles.forEach(file ->
-            cache.invalidate(file.getPath())
-        );
-        cache.invalidate(destinationDirectory);
 
         File destinationDir = new File(destinationDirectory);
         if (!destinationDir.exists()) {
@@ -305,6 +320,11 @@ public class FileUtil {
 
             Files.move(sourcePath, destinationPath, StandardCopyOption.REPLACE_EXISTING);
         }
+
+        sourceFiles.forEach(file ->
+            cache.invalidate(file.getPath())
+        );
+        cache.invalidate(destinationDirectory);
     }
 
     public static boolean createFile(String filePath) throws IOException {
@@ -313,26 +333,29 @@ public class FileUtil {
     }
 
     public static boolean createFile(String filePath, byte[] content) throws IOException {
-        cache.invalidate(filePath);
 
         File newFile = new File(filePath);
         boolean success = newFile.createNewFile();
         writeBytes(filePath, 0, content);
 
+
+        cache.invalidate(filePath);
         return success;
     }
 
     public static boolean renameFile(String oldFilePath, String newFilePath) {
-        cache.invalidate(oldFilePath);
-        cache.invalidate(newFilePath);
 
         File oldFile = new File(oldFilePath);
         File newFile = new File(newFilePath);
 
+        boolean success = false;
         if (oldFile.exists()) {
-            return oldFile.renameTo(newFile);
+            success = oldFile.renameTo(newFile);
         }
-        return false;
+
+        cache.invalidate(oldFilePath);
+        cache.invalidate(newFilePath);
+        return success;
     }
 
     public static File[] listFiles(String path) {
@@ -442,8 +465,7 @@ public class FileUtil {
         });
     }
 
-    public static long popBytes(String filePath, int bytesToPop, List<Long> startBytes) throws IOException {
-        cache.invalidate(filePath);
+    public static long popBytes(String filePath, int bytesToPop, List<Long> startBytes) throws IOException { //, boolean setFirst8BytesAsSizeOfThisFile
 
         File file = new File(filePath);
         startBytes.sort(Long::compareTo);
@@ -477,21 +499,25 @@ public class FileUtil {
                 }
 
             }
+
+            cache.invalidate(filePath);
             return raf.length();
         }
     }
 
     public static boolean deleteFile(String filePath) throws IOException {
-        cache.invalidate(filePath);
 
+        boolean success = false;
         if (exists(filePath)) {
             Path path = Paths.get(filePath);
             if (!Files.isDirectory(path)) {
                 Files.delete(path);
-                return true;
+                success = true;
             }
         }
-        return false;
+
+        cache.invalidate(filePath);
+        return success;
     }
 
     public static void deleteDirectory(String directoryPath) throws IOException {
@@ -500,15 +526,15 @@ public class FileUtil {
         Files.walkFileTree(path, EnumSet.noneOf(FileVisitOption.class), Integer.MAX_VALUE, new FileVisitor<>() {
             @Override
             public FileVisitResult visitFile(Path path, BasicFileAttributes basicFileAttributes) throws IOException {
-                cache.invalidate(path.toString());
                 Files.delete(path); // Delete files
+                cache.invalidate(path.toString());
                 return FileVisitResult.CONTINUE;
             }
             @Override
             public FileVisitResult postVisitDirectory(Path path, IOException e) throws IOException {
                 if (path != null) {
-                    cache.invalidate(path.toString());
                     Files.delete(path); // Delete directories after their contents
+                    cache.invalidate(path.toString());
                     return FileVisitResult.CONTINUE;
                 } else {
                     throw e;

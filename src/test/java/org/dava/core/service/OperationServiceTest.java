@@ -1,5 +1,6 @@
 package org.dava.core.service;
 
+import org.dava.common.Bundle;
 import org.dava.common.StreamUtil;
 import org.dava.common.logger.Level;
 import org.dava.common.logger.Logger;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -27,8 +29,7 @@ import java.util.stream.IntStream;
 
 import static org.dava.common.Checks.safeCast;
 import static org.dava.common.StreamUtil.enumerate;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 class OperationServiceTest {
 
@@ -78,17 +79,19 @@ class OperationServiceTest {
 
         return IntStream.range(0, iterations)
             .mapToObj( i -> {
-                OffsetDateTime time = OffsetDateTime.now();
-                time = time.withYear(random.nextInt(2000, 2023));
-                time = time.withMonth(random.nextInt(1, 13));
-                time = time.withDayOfMonth(random.nextInt(1, 28));
-                time = time.withHour(random.nextInt(0, 24));
-                time = time.withMinute(random.nextInt(0, 60));
-                time = time.withSecond(random.nextInt(0, 60));
-                time = (random.nextBoolean())? time.withOffsetSameInstant(ZoneOffset.UTC) : time;
+                OffsetDateTime time = OffsetDateTime.of(
+                    random.nextInt(2000, 2023),
+                    random.nextInt(1, 13),
+                    random.nextInt(1, 28),
+                    random.nextInt(0, 24),
+                    random.nextInt(0, 60),
+                    random.nextInt(0, 60),
+                    0,
+                    (random.nextBoolean())? ZoneOffset.UTC : ZoneOffset.MAX
+                );
 //            time = time.withOffsetSameInstant(ZoneOffset.UTC);
                 Order orderTable = new Order(
-                    DavaTSID.generateId("order"),
+                    DavaTSID.generateId("order", String.valueOf(random.nextInt(1000000000))),
                     "This is a long description. A lot of tables could have something like this, so this will be a good test.",
                     BigDecimal.valueOf(Math.abs(random.nextLong(0, 100))),
                     BigDecimal.valueOf(Math.abs(random.nextLong(0, 5))),
@@ -255,7 +258,9 @@ class OperationServiceTest {
     }
 
     @Test
-    void delete_and() {
+    void delete_and() throws IOException {
+        // order_86B122D 120988, 154
+
         Table<?> table = database.getTableByName("Order");
 
         OffsetDate date = OffsetDate.of(OffsetDateTime.now().minusYears(10).toString());
@@ -266,8 +271,47 @@ class OperationServiceTest {
         );
         List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
 
+        List<String> lines = BaseOperationService.getRoutes(
+            "db/Order/META_Order/discount/4.index",
+            "Order",
+            0L,
+            null
+        ).getSecond().stream()
+            .map(route -> {
+                try {
+                    return new String(
+                        FileUtil.readBytes(table.getTablePath("Order"), route.getOffsetInTable(), route.getLengthInTable()),
+                        StandardCharsets.UTF_8
+                    );
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            })
+            .filter(line -> line.contains("order_86B122D"))
+            .toList();
+
+
         Delete delete = new Delete(database, table);
         delete.delete(rows);
+
+        List<String> x = BaseOperationService.getRoutes(
+                "db/Order/META_Order/discount/4.index",
+                "Order",
+                0L,
+                null
+            ).getSecond().stream()
+            .map(route -> {
+                try {
+                    return new String(
+                        FileUtil.readBytes(table.getTablePath("Order"), route.getOffsetInTable(), route.getLengthInTable()),
+                        StandardCharsets.UTF_8
+                    );
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            })
+            .filter(line -> line.contains("order_86B122D"))
+            .toList();
 
         Equals equals = new Equals("discount", "4");
         List<Row> postDeleteRows = equals.retrieve(table, new ArrayList<>(), null, null);
@@ -296,7 +340,7 @@ class OperationServiceTest {
     }
 
     @Test
-    void rollback() {
+    void rollback_insert() {
         Table<?> table = database.getTableByName("Order");
         String partition = table.getRandomPartition();
         long intialSize = table.getSize(partition);
@@ -323,15 +367,59 @@ class OperationServiceTest {
         // get all rows
         List<Row> allRowAfter = new All().retrieve(table, List.of(), null, null);
 
+
+        // assert table is the same size after rollback
         long size = table.getSize(partition);
         assertEquals(intialSize, size);
 
+        // assert none of the insert rows are in the table
+        allRowAfter.forEach(afterRow -> {
+            rows.forEach(insertRow -> {
+                assertNotEquals(insertRow, afterRow);
+            });
+        });
+    }
 
+    @Test
+    void rollback_delete() {
+        Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+        long intialSize = table.getSize(partition);
 
+        // get all rows
+        List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
+
+        // do delete
+        Equals equals = new Equals("discount", "1");
+        List<Row> rows = equals.retrieve(table, new ArrayList<>(), null, null);
+        Delete delete = new Delete(database, table);
+        delete.delete(rows);
+
+        // rollback
+        Timer timer = Timer.start();
+        Rollback rollback = new Rollback();
+        rollback.rollback(table, partition, table.getRollbackPath(partition));
+        timer.printRestart();
+
+        // get all rows
+        List<Row> allRowAfter = new All().retrieve(table, List.of(), null, null);
+
+        // assert table is the same size after rollback
+        long size = table.getSize(partition);
+        assertEquals(intialSize, size);
+
+        // assert all the rows before are in all rows after
+        allRowAfter.forEach(afterRow -> {
+            long count = allRowBefore.stream().filter(beforeRow -> beforeRow.equals(afterRow)).count();
+            assertEquals(1L, count);
+        });
     }
 
 
-
+    // rollback halfway through transactions
+    // rollback with using empties
+    // delete, insert using empties
+    //
 
 
     @Test

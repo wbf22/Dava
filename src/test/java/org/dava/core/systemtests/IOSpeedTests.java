@@ -36,6 +36,7 @@ class IOSpeedTests {
      *  - writing an object to file with java serialization can be pretty slow, 16ms. Reading is 3ms. ToString and writing
      *    as bytes is 7ms
      *  - reading count file is much faster than list sub files
+     *  - reading a file's size is a lot faster than reading the first 8 bytes
      */
 
 
@@ -767,6 +768,38 @@ class IOSpeedTests {
         System.out.print("sub folders 3: ");
         System.out.println(System.currentTimeMillis() - time);
 
+    }
+
+    @Test
+    void getFileSize_vs_first8Bytes() throws IOException {
+        /*
+            TEST RESULTS:
+                reading 8 bytes: 70
+                reading file size: 20
+         */
+
+        int ITERATIONS = 10000;
+
+        File directory = new File("one_rows");
+        directory.mkdirs();
+        byte[] file = new byte[100000 * 10];
+        FileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
+
+
+        long time = System.currentTimeMillis();
+        for (int i = 0; i < ITERATIONS; i++) {
+            byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index", 0L, 8);
+        }
+        System.out.print("reading 8 bytes: ");
+        System.out.println(System.currentTimeMillis() - time);
+
+
+        time = System.currentTimeMillis();
+        for (int i = 0; i < ITERATIONS; i++) {
+            long fileSize = FileUtil.fileSize("one_rows/all_lines_index.index");
+        }
+        System.out.print("reading file size: ");
+        System.out.println(System.currentTimeMillis() - time);
     }
 
 }

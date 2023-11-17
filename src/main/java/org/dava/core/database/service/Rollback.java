@@ -18,12 +18,12 @@ public class Rollback {
 
 
     public void rollback(Table<?> table, String partition, String rollbackPath) {
-        Batch rollbackBatch = parse(rollbackPath);
+        Batch rollbackBatch = parse(rollbackPath, table, partition);
         rollbackBatch.rollback(table, partition);
     }
 
 
-    public static Batch parse(String rollbackPath) {
+    public static Batch parse(String rollbackPath, Table<?> table, String partition) {
 
         try {
             List<String> lines = List.of(
@@ -32,11 +32,7 @@ public class Rollback {
                 ).split("\n")
             );
 
-            return switch(lines.get(0)) {
-                case "Insert Batch:" -> InsertBatch.parse(lines);
-                case "Delete Batch:" -> DeleteBatch.parse(lines);
-                default -> throw new DavaException(ROLLBACK_ERROR, "Missing header on rollback file", null);
-            };
+            return Batch.parse(lines, table, partition);
         } catch (IOException e) {
             throw new DavaException(ROLLBACK_ERROR, "Error parsing rollback file: " + rollbackPath, e);
         }

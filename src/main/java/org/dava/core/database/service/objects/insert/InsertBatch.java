@@ -1,15 +1,13 @@
 package org.dava.core.database.service.objects.insert;
 
 import org.dava.common.ArrayUtil;
-import org.dava.core.database.objects.database.structure.IndexRoute;
+import org.dava.core.database.objects.database.structure.Route;
 import org.dava.core.database.objects.database.structure.Table;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.fileaccess.FileUtil;
-import org.dava.core.database.service.objects.Batch;
 import org.dava.core.database.service.objects.EmptiesPackage;
 import org.dava.core.database.service.objects.WritePackage;
-import org.dava.core.database.service.objects.delete.IndexDelete;
 
 import java.io.IOException;
 import java.util.*;
@@ -17,10 +15,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import static org.dava.core.database.objects.exception.ExceptionType.BASE_IO_ERROR;
 import static org.dava.core.database.objects.exception.ExceptionType.ROLLBACK_ERROR;
 
-public class InsertBatch implements Batch {
+public class InsertBatch {
 
     private EmptiesPackage tableEmpties;
     private List<RowWritePackage> rowWritePackages;
@@ -37,11 +34,11 @@ public class InsertBatch implements Batch {
 
     public static InsertBatch parse(List<String> lines) {
         Map<String, List<IndexWritePackage>> writeGroups = new ConcurrentHashMap<>();
-        List<IndexRoute> empties = new ArrayList<>();
+        List<Route> empties = new ArrayList<>();
         List<String> numericPartitions = new ArrayList<>();
 
         lines.parallelStream().forEach( line -> {
-                if (line.startsWith("I:")) {
+                if (line.startsWith("R:")) {
                     String[] subs = line.split(";");
                     String indexPath = subs[0].substring(2);
 
@@ -52,7 +49,7 @@ public class InsertBatch implements Batch {
                             Integer length = Integer.parseInt(nums.split(",")[1]);
 
                             return new IndexWritePackage(
-                                new IndexRoute(
+                                new Route(
                                     null,
                                     offset,
                                     length
@@ -73,7 +70,7 @@ public class InsertBatch implements Batch {
                     Integer length = Integer.parseInt(nums.split(",")[1]);
 
                     empties.add(
-                        new IndexRoute(
+                        new Route(
                             null,
                             offset,
                             length
@@ -157,12 +154,11 @@ public class InsertBatch implements Batch {
     }
 
 
-    @Override
     public void rollback(Table<?> table, String partition) {
         // TODO make sure this works even if the whole insert operation didn't complete
 
         // whitespace empty rows, and write empties in empties file
-        Set<IndexRoute> emptyRoutes = new HashSet<>();
+        Set<Route> emptyRoutes = new HashSet<>();
         List<WritePackage> whitespacePackagesFromEmtpies = tableEmpties.getRollbackEmpties().stream()
             .map( empty -> {
                 emptyRoutes.add(empty);
@@ -180,7 +176,7 @@ public class InsertBatch implements Batch {
                 whitespacePackagesFromEmtpies
             );
 
-            List<IndexRoute> empties = BaseOperationService.getAllEmpties(table.emptiesFilePath(partition));
+            List<Route> empties = BaseOperationService.getAllEmpties(table.emptiesFilePath(partition));
             if (empties != null)
                 emptyRoutes.addAll( empties );
 
@@ -199,7 +195,7 @@ public class InsertBatch implements Batch {
 
 
         // delete indices referring to rows, and the rows themselves as well
-        Set<IndexRoute> routesToDeleteFromTable = new HashSet<>();
+        Set<Route> routesToDeleteFromTable = new HashSet<>();
         indexWriteGroups.forEach( (indexPath, writePackages) -> {
             try {
                 List<Long> startBytes = writePackages.stream()
@@ -245,24 +241,24 @@ public class InsertBatch implements Batch {
         Getter setter
      */
 
-    public EmptiesPackage getTableEmpties() {
+    public EmptiesPackage getUsedTableEmtpies() {
         return tableEmpties;
     }
 
-    public List<RowWritePackage> getRowWritePackages() {
+    public List<RowWritePackage> getRowsWritten() {
         return rowWritePackages;
     }
 
-    public void setRowWritePackages(List<RowWritePackage> rowWritePackages) {
-        this.rowWritePackages = rowWritePackages;
+    public void setRowsWritten(List<RowWritePackage> rowsWritten) {
+        this.rowWritePackages = rowsWritten;
     }
 
-    public Map<String, List<IndexWritePackage>> getIndexWriteGroups() {
+    public Map<String, List<IndexWritePackage>> getIndexPathToIndicesWritten() {
         return indexWriteGroups;
     }
 
-    public void setTableEmpties(EmptiesPackage tableEmpties) {
-        this.tableEmpties = tableEmpties;
+    public void setUsedTableEmtpies(EmptiesPackage usedTableEmtpies) {
+        this.tableEmpties = usedTableEmtpies;
     }
 
     public List<String> getNumericRepartitions() {

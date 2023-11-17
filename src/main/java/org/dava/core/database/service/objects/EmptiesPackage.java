@@ -1,7 +1,6 @@
 package org.dava.core.database.service.objects;
 
-import org.dava.core.database.objects.database.structure.IndexRoute;
-import org.dava.external.annotations.PrimaryKey;
+import org.dava.core.database.objects.database.structure.Route;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -11,9 +10,9 @@ import java.util.stream.Collectors;
 
 public class EmptiesPackage {
 
-    private Map<Integer, List<IndexRoute>> remainingEmpties;
-    private Map<Integer, List<IndexRoute>> usedEmpties;
-    private List<IndexRoute> rollbackEmpties;
+    private Map<Integer, List<Route>> remainingEmpties;
+    private Map<Integer, List<Route>> usedEmpties;
+    private List<Route> rollbackEmpties;
 
 
 
@@ -26,7 +25,7 @@ public class EmptiesPackage {
         usedEmpties = new HashMap<>();
     }
 
-    public void addEmpty(IndexRoute empty) {
+    public void addEmpty(Route empty) {
         if(remainingEmpties.containsKey(empty.getLengthInTable())) {
             remainingEmpties.get(empty.getLengthInTable()).add(empty);
         }
@@ -39,10 +38,10 @@ public class EmptiesPackage {
         return remainingEmpties.containsKey(desiredLength);
     }
 
-    public IndexRoute getEmptyRemember(int desiredLength) {
+    public Route getEmptyRemember(int desiredLength) {
         if (remainingEmpties.containsKey(desiredLength)) {
-            List<IndexRoute> empties = remainingEmpties.get(desiredLength);
-            IndexRoute empty = empties.get(0);
+            List<Route> empties = remainingEmpties.get(desiredLength);
+            Route empty = empties.get(0);
             empties = empties.subList(1, empties.size());
 
             if (!empties.isEmpty()) {
@@ -68,15 +67,15 @@ public class EmptiesPackage {
         Getter Setter
      */
 
-    public Map<Integer, List<IndexRoute>> getUsedEmpties() {
+    public Map<Integer, List<Route>> getUsedEmpties() {
         return usedEmpties;
     }
 
-    public List<IndexRoute> getRollbackEmpties() {
+    public List<Route> getRollbackEmpties() {
         return rollbackEmpties;
     }
 
-    public void setRollbackEmpties(List<IndexRoute> rollbackEmpties) {
+    public void setRollbackEmpties(List<Route> rollbackEmpties) {
         this.rollbackEmpties = rollbackEmpties;
     }
 

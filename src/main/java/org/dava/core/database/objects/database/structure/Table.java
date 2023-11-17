@@ -131,10 +131,7 @@ public class Table<T> {
             if (!FileUtil.exists(path)) {
 
                 // write column titles
-                String columnTitles = columns.values().stream()
-                    .map(Column::getName)
-                    .reduce("", (acc, n) -> acc + "," + n )
-                    .substring(1) + "\n";
+                String columnTitles = makeColumnTitles();
                 byte[] bytes = columnTitles.getBytes(StandardCharsets.UTF_8);
                 FileUtil.writeBytes(
                     path,
@@ -153,6 +150,14 @@ public class Table<T> {
             );
         }
     }
+
+    public String makeColumnTitles() {
+        return columns.values().stream()
+            .map(Column::getName)
+            .reduce("", (acc, n) -> acc + "," + n)
+            .substring(1) + "\n";
+    }
+
 
     public void initColumnLeaves() {
 
@@ -188,7 +193,7 @@ public class Table<T> {
         String emptiesFile = emptiesFilePath(partition);
 
         try {
-            List<IndexRoute> routes = BaseOperationService.getAllEmpties(emptiesFile);
+            List<Route> routes = BaseOperationService.getAllEmpties(emptiesFile);
             EmptiesPackage emptiesPackage = new EmptiesPackage();
             if (routes == null)
                 return emptiesPackage;

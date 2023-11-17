@@ -1,20 +1,9 @@
 package org.dava.core.service;
 
-import org.dava.common.StreamUtil;
-import org.dava.common.Timer;
 import org.dava.common.logger.Level;
 import org.dava.common.logger.Logger;
 import org.dava.core.database.objects.database.structure.*;
-import org.dava.core.database.objects.dates.OffsetDate;
 import org.dava.core.database.service.BaseOperationService;
-import org.dava.core.database.service.Delete;
-import org.dava.core.database.service.Insert;
-import org.dava.core.database.service.MarshallingService;
-import org.dava.core.database.service.fileaccess.FileUtil;
-import org.dava.core.sql.objects.conditions.After;
-import org.dava.core.sql.objects.conditions.Before;
-import org.dava.core.sql.objects.conditions.Equals;
-import org.dava.core.sql.objects.logic.operators.And;
 import org.dava.external.Order;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,14 +11,9 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.*;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
-import java.util.UUID;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
-import static org.dava.common.Checks.safeCast;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -62,7 +46,7 @@ class DatabaseInspectionTest {
         String partition = table.getRandomPartition();
 
         String indexPath = "db/Order/indecis_Order/total/0.index";
-        List<IndexRoute> indices = BaseOperationService.getRoutes(indexPath, partition, 8L, null).getSecond();
+        List<Route> indices = BaseOperationService.getRoutes(indexPath, partition, 8L, null).getSecond();
 
         indices.forEach( route -> {
             log.debug(route.toString());
@@ -79,9 +63,9 @@ class DatabaseInspectionTest {
 
     @Test
     void getEmtpies() throws IOException {
-        IndexRoute route = new IndexRoute(null, 5289L, 178);
+        Route route = new Route(null, 5289L, 178);
         byte[] bytes = route.getRouteAsBytes();
-        IndexRoute parsed = IndexRoute.parseRoute(bytes, null);
+        Route parsed = Route.parseRoute(bytes, null);
 
 
         Table<?> table = database.getTableByName("Order");

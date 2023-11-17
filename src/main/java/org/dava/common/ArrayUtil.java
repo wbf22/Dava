@@ -31,6 +31,16 @@ public class ArrayUtil {
         return newArray;
     }
 
+
+    public static byte[] appendArrays(List<Object> arrays) {
+        if (arrays.isEmpty())
+            return new byte[0];
+
+        int arraySize = ((byte[]) arrays.get(0)).length;
+
+        return appendArrays(arrays, arraySize);
+    }
+
     public static <T> T[] subRange(T[] array, int startIndex, int endIndex) {
         if (startIndex < 0 || endIndex > array.length || startIndex > endIndex) {
             throw new IllegalArgumentException("Invalid sub-range parameters.");

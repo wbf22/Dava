@@ -1,17 +1,13 @@
 package org.dava.core.database.objects.database.structure;
 
 import org.dava.common.ArrayUtil;
-import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
-import java.io.Serializable;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.IntStream;
 
-import static org.dava.core.database.objects.exception.ExceptionType.BASE_IO_ERROR;
-
-public class IndexRoute {
+public class Route {
 
     private String partition;
 
@@ -20,7 +16,7 @@ public class IndexRoute {
     private Integer lengthInTable;
 
 
-    public IndexRoute(String partition, Long offset, Integer length) {
+    public Route(String partition, Long offset, Integer length) {
         this.partition = partition;
         this.offsetInTable = offset;
         this.lengthInTable = length;
@@ -30,7 +26,7 @@ public class IndexRoute {
      * Indices are made up of 10 bytes:
      *    - [6 bytes offset][4 bytes length]
      */
-    public static List<IndexRoute> parseBytes(byte[] bytes, String partition) {
+    public static List<Route> parseBytes(byte[] bytes, String partition) {
         return IntStream.range(0, bytes.length/10)
             .mapToObj(i -> {
                 int index = i * 10;
@@ -43,11 +39,11 @@ public class IndexRoute {
 
     }
 
-    public static IndexRoute parseRoute(byte[] bytes, String partition) {
+    public static Route parseRoute(byte[] bytes, String partition) {
         byte[] offset = ArrayUtil.subRange(bytes, 0, 6);
         byte[] length = ArrayUtil.subRange(bytes, 6, 10);
 
-        return new IndexRoute(
+        return new Route(
             partition,
             TypeToByteUtil.byteArrayToLong(
                 ArrayUtil.appendArray(new byte[2], offset)
@@ -105,7 +101,7 @@ public class IndexRoute {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        IndexRoute route = (IndexRoute) o;
+        Route route = (Route) o;
         return Objects.equals(partition, route.partition) && Objects.equals(offsetInTable, route.offsetInTable) && Objects.equals(lengthInTable, route.lengthInTable);
     }
 

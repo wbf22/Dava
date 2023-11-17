@@ -3,7 +3,6 @@ package org.dava.core.database.objects.database.structure;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
 
-import java.io.Serializable;
 import java.util.*;
 
 import static org.dava.common.Checks.*;
@@ -12,11 +11,11 @@ import static org.dava.core.database.objects.exception.ExceptionType.CORRUPTED_R
 public class Row {
     private Map<String, Object> columnsToValues;
     private String tableName;
-    private IndexRoute locationInTable;
+    private Route locationInTable;
 
 
 
-    public Row(String line, Table<?> table, IndexRoute locationInTable) {
+    public Row(String line, Table<?> table, Route locationInTable) {
         try {
             this.locationInTable = locationInTable;
             line = line.trim();
@@ -109,7 +108,7 @@ public class Row {
         this.tableName = tableName;
     }
 
-    public IndexRoute getLocationInTable() {
+    public Route getLocationInTable() {
         return locationInTable;
     }
 
