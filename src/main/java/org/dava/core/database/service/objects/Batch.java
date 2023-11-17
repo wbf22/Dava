@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.LongStream;
@@ -411,7 +412,7 @@ public class Batch {
             }
         });
 
-        // delete actual rows from table
+        // delete actual inserted rows from table
         try {
             if (table.getMode() != Mode.LIGHT) {
                 FileUtil.writeBytesIfPossible(
@@ -425,7 +426,7 @@ public class Batch {
                         ).toList()
                 );
             }
-            else {
+            else if (rowsWritten.size() > 0) {
                 // if light mode, just get all the rows out, remove those to delete, and then write them back
                 List<Route> routesToDelete = rowsWritten.stream()
                     .map(RowWritePackage::getRoute)
@@ -493,14 +494,32 @@ public class Batch {
 
 
         // add back rows that were deleted
-        List<WritePackage> writePackages = rows.stream()
-            .map(row ->
-                new WritePackage(
-                    row.getLocationInTable().getOffsetInTable(),
-                    Row.serialize(table, row.getColumnsToValues()).getBytes(StandardCharsets.UTF_8)
-                ))
-                .toList();
         try {
+            if (table.getMode() == Mode.LIGHT) { // if it's light mode we need to put a new line on the end
+                String tablePath = table.getTablePath(partition);
+                FileUtil.writeBytes(tablePath, FileUtil.fileSize(tablePath), "\n".getBytes(StandardCharsets.UTF_8));
+            }
+            AtomicReference<Long> offset = new AtomicReference<>(
+                FileUtil.fileSize(table.getTablePath(partition))
+            );
+            List<WritePackage> writePackages = rows.stream()
+                .map(row -> {
+                    Route route = row.getLocationInTable();
+                    String rowString = Row.serialize(table, row.getColumnsToValues()) + "\n";
+                    byte[] bytes = rowString.getBytes(StandardCharsets.UTF_8);
+
+                    if (table.getMode() == Mode.LIGHT) { // light mode these routes won't be valid so we need to append instead
+                        route.setOffsetInTable(offset.get());
+                        offset.getAndUpdate(val -> val + bytes.length);
+                    }
+
+                    return new WritePackage(
+                        route.getOffsetInTable(),
+                        bytes
+                    );
+                })
+                .toList();
+
             FileUtil.writeBytes(
                 table.getTablePath(partition),
                 writePackages
@@ -508,6 +527,7 @@ public class Batch {
         } catch (IOException e) {
             throw new DavaException(ROLLBACK_ERROR, "Error adding back rows rolling back failed delete", e);
         }
+
 
         // reset table size and empties file size
         if (oldTableSize != null) {

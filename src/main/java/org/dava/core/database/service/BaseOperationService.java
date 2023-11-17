@@ -307,35 +307,39 @@ public class BaseOperationService {
             boolean descending
     ) {
 
-        // all year folders within partitions, filtered by after date, sorted descending or ascending
-        List<Integer> yearDatesFolders = getYearDateFolders(table, columnName, date, compareYearsFolderYearDateYear, descending);
+        Column<?> column = table.getColumn(columnName);
+
+        if (column.isIndexed()) {
+
+            // all year folders within partitions, filtered by after date, sorted descending or ascending
+            List<Integer> yearDatesFolders = getYearDateFolders(table, columnName, date, compareYearsFolderYearDateYear, descending);
 
 
-        List<Row> rows = new ArrayList<>();
-        Comparator<Row> comparator = Comparator.comparing(
+            List<Row> rows = new ArrayList<>();
+            Comparator<Row> comparator = Comparator.comparing(
                 row -> safeCast(row.getValue(columnName), Date.class)
-        );
-        comparator = (descending)? comparator.reversed() : comparator;
+            );
+            comparator = (descending)? comparator.reversed() : comparator;
 
-        long count = 0L;
-        int size = (int) (endRow - startRow);
-        for (Integer year : yearDatesFolders) {
-            // get date files for year
-            List<LocalDate> indicesForLocalDates = table.getPartitions().parallelStream()
+            long count = 0L;
+            int size = (int) (endRow - startRow);
+            for (Integer year : yearDatesFolders) {
+                // get date files for year
+                List<LocalDate> indicesForLocalDates = table.getPartitions().parallelStream()
                     .flatMap(partition -> {
                         String yearPath = Index.buildIndexYearFolderForDate(table, partition, columnName, year.toString());
                         return Arrays.stream(FileUtil.listFiles(yearPath))
-                                .map( indexFile -> LocalDate.parse(indexFile.getName().split("\\.")[0]) );
+                            .map( indexFile -> LocalDate.parse(indexFile.getName().split("\\.")[0]) );
                     })
                     .sorted(
-                            (descending)? Comparator.reverseOrder() : Comparator.naturalOrder()
+                        (descending)? Comparator.reverseOrder() : Comparator.naturalOrder()
                     )
                     .toList();
 
-            // for each of the indexLocalDate in indicesForLocalDates, count up until you get to start row
-            for (LocalDate indexLocalDate : indicesForLocalDates) {
-                if (count <= startRow) {
-                    count += table.getPartitions().parallelStream()
+                // for each of the indexLocalDate in indicesForLocalDates, count up until you get to start row
+                for (LocalDate indexLocalDate : indicesForLocalDates) {
+                    if (count <= startRow) {
+                        count += table.getPartitions().parallelStream()
                             .map(partition -> {
                                 Date<?> indexLocateDate = Date.of(indexLocalDate.toString(), LocalDate.class);
 
@@ -345,52 +349,59 @@ public class BaseOperationService {
                                 }
                                 else if (indexLocalDate.equals(date.getDateWithoutTime())) {
                                     return (long) getRowsFromTable( table, columnName, indexLocalDate.toString(), 0, null ).stream()
-                                            .filter(row -> {
-                                                Date<?> rowDate = safeCast(row.getValue(columnName), Date.class);
-                                                return compareDatesRowYearDateYear.test(rowDate, date);
-                                            })
-                                            .toList()
-                                            .size();
+                                        .filter(row -> {
+                                            Date<?> rowDate = safeCast(row.getValue(columnName), Date.class);
+                                            return compareDatesRowYearDateYear.test(rowDate, date);
+                                        })
+                                        .toList()
+                                        .size();
                                 }
                                 return 0L;
                             })
                             .reduce(Long::sum)
                             .orElse(0L);
-                }
+                    }
 
 
-                if (count > startRow) {
-                    List<Row> returned = table.getPartitions().parallelStream()
+                    if (count > startRow) {
+                        List<Row> returned = table.getPartitions().parallelStream()
                             .flatMap(partition ->
-                                 getRowsFromTable(table, columnName, indexLocalDate.toString(), 0, null ).stream()
+                                         getRowsFromTable(table, columnName, indexLocalDate.toString(), 0, null ).stream()
                             )
                             .toList();
 
-                    if (indexLocalDate.getYear() == year) {
-                        returned = returned.stream()
+                        if (indexLocalDate.getYear() == year) {
+                            returned = returned.stream()
                                 .filter(row -> {
                                     Date<?> rowDate = safeCast(row.getValue(columnName), Date.class);
                                     return compareDatesRowYearDateYear.test(rowDate, date);
                                 })
                                 .toList();
-                    }
+                        }
 
-                    rows.addAll(returned);
+                        rows.addAll(returned);
 
-                    // once you have enough rows, sort the rows descending or ascending and return the sublist of the requested size
-                    if (rows.size() > size) {
-                        return rows.stream()
+                        // once you have enough rows, sort the rows descending or ascending and return the sublist of the requested size
+                        if (rows.size() > size) {
+                            return rows.stream()
                                 .sorted( comparator )
                                 .toList()
                                 .subList(0, size);
+                        }
                     }
                 }
             }
-        }
 
-        return rows.stream()
+            return rows.stream()
                 .sorted( comparator )
                 .toList();
+        }
+        else {
+            List<Row> rows =  getAllComparingDate(table, columnName, compareYearsFolderYearDateYear, compareDatesRowYearDateYear, date, descending)
+                .toList();
+            return (rows.size() > endRow - startRow)? rows.subList((int) startRow, (int) endRow) : rows;
+        }
+
     }
 
 

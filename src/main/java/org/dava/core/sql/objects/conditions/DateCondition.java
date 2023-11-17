@@ -9,6 +9,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BiPredicate;
+import java.util.stream.Stream;
 
 import static org.dava.core.database.service.BaseOperationService.getCountForIndexPath;
 
@@ -49,6 +50,7 @@ public abstract class DateCondition<T extends Date<?>> implements Condition {
             offset
         );
     }
+
 
 
     @Override

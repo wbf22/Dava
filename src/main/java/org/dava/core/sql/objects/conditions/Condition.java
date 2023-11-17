@@ -37,8 +37,7 @@ public interface Condition {
     ) {
         List<Row> rows;
         boolean allRows = limit == null && offset == null;
-        Column<?> column = table.getColumn(columnName);
-        if (allRows || !column.isIndexed()) {
+        if (allRows) {
             rows = getAllRows.get()
                 .filter(row -> {
                     if (parentFilters.isEmpty())
