@@ -2,11 +2,8 @@ package org.dava.core.database.service;
 
 import org.dava.core.database.objects.database.structure.Table;
 import org.dava.core.database.objects.exception.DavaException;
-import org.dava.core.database.objects.exception.ExceptionType;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.objects.Batch;
-import org.dava.core.database.service.objects.delete.DeleteBatch;
-import org.dava.core.database.service.objects.insert.InsertBatch;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

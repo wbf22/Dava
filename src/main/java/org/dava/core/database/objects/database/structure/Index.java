@@ -79,26 +79,32 @@ public class Index {
         boolean done = false;
         while(!done) {
             String path = leaves.get(0);
+            path = path.replace(columnPath, "");
+            if (path.length() > 0) {
+                path = path.substring(1);
+                StringBuilder pathSoFar = new StringBuilder(columnPath);
+                for (String folder : path.split("/")) {
+                    pathSoFar.append("/").append(folder);
+                    BigDecimal folderBd = new BigDecimal(folder.substring(1));
 
-            StringBuilder pathSoFar = new StringBuilder(columnPath);
-            for (String folder : path.split("/")) {
-                pathSoFar.append("/").append(folder);
-                BigDecimal folderBd = new BigDecimal(folder.substring(1));
+                    boolean correctFolderSoFar = ( folderBd.compareTo(value) > 0 && folder.contains("-") )
+                        || ( folderBd.compareTo(value) <= 0 && folder.contains("+") );
 
-                boolean rightFolderSoFar = ( value.compareTo(folderBd) < 0 && folder.contains("-") )
-                    || ( value.compareTo(folderBd) < 0 && folder.contains("+") );
-
-                if (!rightFolderSoFar) {
-                    leaves = leaves.stream()
-                        .filter(leaf -> leaf.contains(pathSoFar.toString()))
-                        .toList();
-                    done = false;
-                    break;
+                    if (!correctFolderSoFar) {
+                        leaves = leaves.stream()
+                            .filter(leaf -> !leaf.contains(pathSoFar.toString()))
+                            .toList();
+                        done = false;
+                        break;
+                    }
+                    else {
+                        done = true;
+                        correctPath = pathSoFar;
+                    }
                 }
-                else {
-                    done = true;
-                    correctPath = pathSoFar;
-                }
+            }
+            else {
+                return columnPath;
             }
         }
 

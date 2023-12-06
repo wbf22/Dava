@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.stream.IntStream;
 
 import static org.dava.core.database.objects.exception.ExceptionType.BASE_IO_ERROR;
 import static org.dava.core.database.objects.exception.ExceptionType.TABLE_PARSE_ERROR;
@@ -165,7 +166,7 @@ public class Table<T> {
             columns.values().forEach( column -> {
                 String indexPath = Index.buildColumnPath(databaseRoot, tableName, partition, column.getName());
 
-                List<File> subDirs = FileUtil.getSubFolders(indexPath);
+                List<File> subDirs = FileUtil.getLeafFolders(indexPath);
                 columnLeaves.put(partition + column.getName(), subDirs);
             });
         });
@@ -198,7 +199,12 @@ public class Table<T> {
             if (routes == null)
                 return emptiesPackage;
 
-            routes.forEach(emptiesPackage::addEmpty);
+            IntStream.range(0, routes.size())
+                .forEach(i ->
+                    emptiesPackage.addEmpty(
+                        new Empty(i, routes.get(i))
+                    )
+                );
 
             return emptiesPackage;
         } catch (IOException e) {

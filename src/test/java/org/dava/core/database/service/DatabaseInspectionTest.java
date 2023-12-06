@@ -1,9 +1,8 @@
-package org.dava.core.service;
+package org.dava.core.database.service;
 
 import org.dava.common.logger.Level;
 import org.dava.common.logger.Logger;
 import org.dava.core.database.objects.database.structure.*;
-import org.dava.core.database.service.BaseOperationService;
 import org.dava.external.Order;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -46,7 +45,7 @@ class DatabaseInspectionTest {
         String partition = table.getRandomPartition();
 
         String indexPath = "db/Order/indecis_Order/total/0.index";
-        List<Route> indices = BaseOperationService.getRoutes(indexPath, partition, 8L, null).getSecond();
+        List<Route> indices = BaseOperationService.getFileSizeAndRoutes(indexPath, partition, 8L, null).getSecond();
 
         indices.forEach( route -> {
             log.debug(route.toString());

@@ -1,12 +1,10 @@
-package org.dava.core.service;
+package org.dava.core.database.service;
 
-import org.dava.common.Bundle;
 import org.dava.common.StreamUtil;
 import org.dava.common.logger.Level;
 import org.dava.common.logger.Logger;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.OffsetDate;
-import org.dava.core.database.service.*;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.sql.objects.conditions.After;
 import org.dava.core.sql.objects.conditions.All;
@@ -21,26 +19,24 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.nio.charset.StandardCharsets;
 import java.time.*;
 import java.util.*;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static org.dava.common.Checks.safeCast;
 import static org.dava.common.StreamUtil.enumerate;
 import static org.junit.jupiter.api.Assertions.*;
 
-class OperationServiceTest {
+class BasicOperationsTest {
 
     static Database database;
     static int ITERATIONS = 1000;
     static Level logLevel = Level.INFO;
 //    static String DB_ROOT = "/Users/brandon.fowler/Desktop/db";
-    static Mode TABLE_MODE = Mode.MANUAL;
+    static Mode TABLE_MODE = Mode.INDEX_ALL;
     static String DB_ROOT = "db";
     static Long seed = -183502108378805369L;
-    private static final Logger log = Logger.getLogger(OperationServiceTest.class.getName());
+    private static final Logger log = Logger.getLogger(BasicOperationsTest.class.getName());
 
 
     static void setUpWipeAndPopulate() throws IOException {
@@ -258,88 +254,6 @@ class OperationServiceTest {
     }
 
     @Test
-    void delete_and() throws IOException {
-        // order_86B122D 120988, 154
-
-        Table<?> table = database.getTableByName("Order");
-
-        OffsetDate date = OffsetDate.of(OffsetDateTime.now().minusYears(10).toString());
-        Before<OffsetDate> before = new Before<>(
-            "time",
-            date,
-            true
-        );
-        List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
-
-        List<String> lines = BaseOperationService.getRoutes(
-            "db/Order/META_Order/discount/4.index",
-            "Order",
-            0L,
-            null
-        ).getSecond().stream()
-            .map(route -> {
-                try {
-                    return new String(
-                        FileUtil.readBytes(table.getTablePath("Order"), route.getOffsetInTable(), route.getLengthInTable()),
-                        StandardCharsets.UTF_8
-                    );
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            })
-            .filter(line -> line.contains("order_86B122D"))
-            .toList();
-
-
-        Delete delete = new Delete(database, table);
-        delete.delete(rows);
-
-        List<String> x = BaseOperationService.getRoutes(
-                "db/Order/META_Order/discount/4.index",
-                "Order",
-                0L,
-                null
-            ).getSecond().stream()
-            .map(route -> {
-                try {
-                    return new String(
-                        FileUtil.readBytes(table.getTablePath("Order"), route.getOffsetInTable(), route.getLengthInTable()),
-                        StandardCharsets.UTF_8
-                    );
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            })
-            .filter(line -> line.contains("order_86B122D"))
-            .toList();
-
-        Equals equals = new Equals("discount", "4");
-        List<Row> postDeleteRows = equals.retrieve(table, new ArrayList<>(), null, null);
-        postDeleteRows.forEach( row -> {
-            OffsetDate rowDate = OffsetDate.of(row.getValue("time").toString());
-            rowDate.isAfter(date);
-        });
-
-        OffsetDate andDate = OffsetDate.of(OffsetDateTime.now().minusYears(1));
-        And and = new And(
-            new After<>("time", andDate, true),
-            new Equals("discount", "1")
-        );
-        rows = and.retrieve(table, new ArrayList<>(), null, null);
-
-        rows.forEach( row -> {
-            log.debug(
-                Row.serialize(database.getTableByName(row.getTableName()), row.getColumnsToValues())
-            );
-            assertEquals("1", row.getValue("discount"));
-            OffsetDate rowDate = OffsetDate.of(row.getValue("time").toString());
-            assertTrue(rowDate.isAfter(andDate) || rowDate.equals(andDate));
-        });
-
-
-    }
-
-    @Test
     void rollback_insert() {
         Table<?> table = database.getTableByName("Order");
         String partition = table.getRandomPartition();
@@ -414,6 +328,7 @@ class OperationServiceTest {
 //            assertEquals(1L, count);
 //        });
     }
+
 
 
     // rollback halfway through transactions

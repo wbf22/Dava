@@ -62,7 +62,7 @@ public class Cache {
 
 
         // handle cache getting too big
-        if (pathCache.size() > MAX_CACHE_SIZE) invalidateCache();
+        if (pathCache.size() > MAX_CACHE_SIZE) invalidateCacheAll();
 
         return result;
     }
@@ -79,7 +79,7 @@ public class Cache {
     /**
      * resets this cache, invalidating all resources
      */
-    public void invalidateCache() {
+    public void invalidateCacheAll() {
         pathCache = new ConcurrentHashMap<>();
     }
 

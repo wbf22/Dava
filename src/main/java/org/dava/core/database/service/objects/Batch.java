@@ -1,10 +1,7 @@
 package org.dava.core.database.service.objects;
 
 import org.dava.common.ArrayUtil;
-import org.dava.core.database.objects.database.structure.Route;
-import org.dava.core.database.objects.database.structure.Mode;
-import org.dava.core.database.objects.database.structure.Row;
-import org.dava.core.database.objects.database.structure.Table;
+import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.fileaccess.FileUtil;
@@ -17,11 +14,8 @@ import org.dava.core.database.service.type.compression.TypeToByteUtil;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import java.util.stream.LongStream;
 
 import static org.dava.core.database.objects.exception.ExceptionType.ROLLBACK_ERROR;
 
@@ -32,22 +26,21 @@ public class Batch {
     private EmptiesPackage usedTableEmtpies;
     private List<RowWritePackage> rowsWritten;
     private Map<String, List<IndexWritePackage>> indexPathToIndicesWritten;
-    private List<String> numericRepartitions;
 
     // delete
     private List<Row> rows;
     private Long oldTableSize;
     private Long oldEmptiesSize;
     private Map<String, IndexDelete> indexPathToInvalidRoutes;
-    private Map<String, CountChange> numericCountFileChanges;
 
+    // shared
+    private Map<String, CountChange> numericCountFileChanges;
 
 
     public Batch() {
         this.usedTableEmtpies = new EmptiesPackage();
         this.rowsWritten = new ArrayList<>();
         this.indexPathToIndicesWritten = new HashMap<>();
-        this.numericRepartitions = new ArrayList<>();
 
         this.rows = new ArrayList<>();
         this.indexPathToInvalidRoutes = new HashMap<>();
@@ -57,8 +50,7 @@ public class Batch {
     public static Batch parse(List<String> lines, Table<?> table, String partition) {
         Map<String, List<IndexWritePackage>> writeGroups = new HashMap<>();
         List<RowWritePackage> rowsWritten = new ArrayList<>();
-        List<Route> empties = new ArrayList<>();
-        List<String> numericPartitions = new ArrayList<>();
+        List<Empty> empties = new ArrayList<>();
         List<Row> rows = new ArrayList<>();
         Long oldTableSize = null;
         Long oldEmptiesSize = null;
@@ -99,16 +91,15 @@ public class Batch {
                 Integer length = Integer.parseInt(nums.split(",")[1]);
 
                 empties.add(
-                    new Route(
-                        null,
-                        offset,
-                        length
+                    new Empty(
+                        -1,
+                        new Route(
+                            null,
+                            offset,
+                            length
+                        )
                     )
                 );
-            }
-            else if (line.startsWith("N:")) {
-                String folderPath = line.substring(2);
-                numericPartitions.add(folderPath);
             }
             else if (line.startsWith("Rw:")) {
                 String nums = line.substring(5);
@@ -209,7 +200,6 @@ public class Batch {
         batch.usedTableEmtpies = emptiesPackage;
         batch.rowsWritten = rowsWritten;
         batch.indexPathToIndicesWritten = writeGroups;
-        batch.numericRepartitions = numericPartitions;
         batch.rows = rows;
         batch.oldTableSize = oldTableSize;
         batch.oldEmptiesSize = oldEmptiesSize;
@@ -231,10 +221,6 @@ public class Batch {
                 )
             );
         }
-    }
-
-    public void addNumericRepartition(String indexPath) {
-        this.numericRepartitions.add(indexPath);
     }
 
     /**
@@ -272,21 +258,12 @@ public class Batch {
         usedTableEmtpies.getUsedEmpties().forEach((length, empties) ->
             empties.forEach(empty ->
                 builder.append("E:")
-                    .append(empty.getOffsetInTable())
+                    .append(empty.getRoute().getOffsetInTable())
                     .append(",")
-                    .append(empty.getLengthInTable())
-                    .append(";")
+                    .append(empty.getRoute().getLengthInTable())
                     .append("\n")
                 // use the route to just add empties back to empties file (empties in table are whitespaced out in previous step)
             ));
-
-        // for rolling back numeric repartitions
-        numericRepartitions.forEach( folderPath ->
-             builder.append("N:")
-                 .append(folderPath)
-                 .append("\n")
-        );
-
 
         // for rolling back rows added to the table
         rowsWritten.forEach(rowWritePackage ->
@@ -312,7 +289,7 @@ public class Batch {
         });
 
         // table sizes
-        if (oldEmptiesSize != null)
+        if (oldTableSize != null)
             builder.append("TS:")
                 .append(oldTableSize)
                 .append("\n");
@@ -355,17 +332,16 @@ public class Batch {
 
     //TODO maybe split up this giant rollback method
     public void rollback(Table<?> table, String partition) {
-        // TODO make sure this works even if the whole insert operation didn't complete
 
         // whitespace empty rows, and write empties in empties file
         Set<Route> emptyRoutes = new HashSet<>();
         List<WritePackage> whitespacePackagesFromEmtpies = usedTableEmtpies.getRollbackEmpties().stream()
             .map( empty -> {
-                emptyRoutes.add(empty);
+                emptyRoutes.add(empty.getRoute());
 
                 return new WritePackage(
-                    empty.getOffsetInTable(),
-                    Table.getWhitespaceBytes(empty.getLengthInTable())
+                    empty.getRoute().getOffsetInTable(),
+                    Table.getWhitespaceBytes(empty.getRoute().getLengthInTable())
                 );
             })
             .toList();
@@ -401,11 +377,26 @@ public class Batch {
         // delete indices referring to rows
         indexPathToIndicesWritten.forEach((indexPath, writePackages) -> {
             try {
-                List<Long> startBytes = LongStream.range(0, writePackages.size())
-                    .mapToObj(i -> i * 10)
-                    .collect(Collectors.toList());
+                List<Route> routes = new ArrayList<>(
+                    BaseOperationService.getFileSizeAndRoutes(indexPath, partition, 0L, 10).getSecond()
+                );
+                routes.removeAll(
+                    writePackages.stream()
+                        .map(IndexWritePackage::getRoute)
+                        .toList()
+                );
 
-                FileUtil.popBytes(indexPath, 10, startBytes);
+                FileUtil.replaceFile(
+                    indexPath,
+                    routes.stream().map(route -> new WritePackage(
+                        route.getOffsetInTable(),
+                        route.getRouteAsBytes()
+                    ))
+                    .toList()
+                );
+
+                if (FileUtil.fileSize(indexPath) == 0)
+                    FileUtil.deleteFile(indexPath);
 
             } catch (IOException e) {
                 throw new DavaException(ROLLBACK_ERROR, "Error updating indices undoing insert", e);
@@ -483,11 +474,6 @@ public class Batch {
         }
 
 
-        // update table size
-        if (table.getMode() != Mode.LIGHT) {
-            long currentSize = table.getSize(partition);
-            table.setSize(partition, currentSize - whitespacePackagesFromEmtpies.size() - rowsWritten.size());
-        }
 
         // NOTE repartitions aren't undone. indices are just removed, and then they're left as is. index files aren't deleted
         // so count files don't need to be updated
@@ -541,30 +527,29 @@ public class Batch {
             }
         }
 
-        // add back routes pointing to deleted rows
+        // add back index routes pointing to deleted rows
         indexPathToInvalidRoutes.forEach( (indexPath, indexDelete) -> {
             try {
-                FileUtil.writeBytesAppend(
+                Set<Route> routes = new HashSet<>(
+                    BaseOperationService.getFileSizeAndRoutes(indexPath, partition, 0L, 10).getSecond()
+                );
+                routes.addAll(
+                    indexDelete.getOriginalRoutes()
+                );
+
+                FileUtil.replaceFile(
                     indexPath,
-                    ArrayUtil.appendArrays(
-                        indexDelete.getOriginalRoutes().stream()
-                            .map(route -> (Object) route.getRouteAsBytes())
-                            .toList()
-                    )
+                    routes.stream().map(route -> new WritePackage(
+                        route.getOffsetInTable(),
+                        route.getRouteAsBytes()
+                    ))
+                    .toList()
                 );
             } catch (IOException e) {
                 throw new DavaException(ROLLBACK_ERROR, "Error rolling back index file after failed delete: " + indexPath, e);
             }
         });
 
-        // reset numeric count files
-        numericCountFileChanges.forEach( (countFilePath, countChange) -> {
-            try {
-                FileUtil.writeBytes( countFilePath, 0, TypeToByteUtil.longToByteArray(countChange.getOldCount()) );
-            } catch (IOException e) {
-                throw new DavaException(ROLLBACK_ERROR, "Error rolling back count file after failed delete: " + countFilePath, e);
-            }
-        });
     }
 
 
@@ -595,14 +580,6 @@ public class Batch {
 
     public void setIndexPathToIndicesWritten(Map<String, List<IndexWritePackage>> indexPathToIndicesWritten) {
         this.indexPathToIndicesWritten = indexPathToIndicesWritten;
-    }
-
-    public List<String> getNumericRepartitions() {
-        return numericRepartitions;
-    }
-
-    public void setNumericRepartitions(List<String> numericRepartitions) {
-        this.numericRepartitions = numericRepartitions;
     }
 
     public List<Row> getRows() {
@@ -644,4 +621,5 @@ public class Batch {
     public void setNumericCountFileChanges(Map<String, CountChange> numericCountFileChanges) {
         this.numericCountFileChanges = numericCountFileChanges;
     }
+
 }

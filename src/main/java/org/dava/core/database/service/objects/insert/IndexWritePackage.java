@@ -50,4 +50,8 @@ public class IndexWritePackage extends WritePackage {
     public String getFolderPath() {
         return folderPath;
     }
+
+    public void setFolderPath(String folderPath) {
+        this.folderPath = folderPath;
+    }
 }

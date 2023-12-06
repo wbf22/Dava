@@ -17,7 +17,6 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.LongStream;
 
 import static org.dava.core.database.objects.exception.ExceptionType.*;
@@ -127,7 +126,7 @@ public class Delete {
 
                     long newSize = FileUtil.popBytes(indexPath, 10, indexDelete.getIndicesToDelete());
                     if (newSize == 0)
-                        FileUtil.deleteFile(indexPath);
+                        FileUtil.deleteFile(indexPath); // this is important as during rollbacks table counts are updated by the number of primary key index files
 
                 } catch (IOException e) {
                     throw new DavaException(BASE_IO_ERROR, "Error updating indices after delete", e);
@@ -161,9 +160,9 @@ public class Delete {
                     .reduce(Boolean::logicalAnd)
                     .orElse(true)
             )
-            .collect(Collectors.joining("\n"));
+            .collect(Collectors.joining("\n")) + "\n";
 
-        // delete the old file
+        // delete the old file and write all rows back
         String tablePath = table.getTablePath(partition);
         try {
             FileUtil.deleteFile(tablePath);
@@ -194,7 +193,7 @@ public class Delete {
                         entry.getValue()
                     );
 
-                    Bundle<Long, List<Route>> bundle = BaseOperationService.getRoutes(
+                    Bundle<Long, List<Route>> bundle = BaseOperationService.getFileSizeAndRoutes(
                         indexPath,
                         partition,
                         0L,

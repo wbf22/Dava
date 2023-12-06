@@ -11,7 +11,7 @@ import java.util.*;
 
 public class FileUtil {
 
-    private static Cache cache = new Cache();
+    public static Cache cache = new Cache();
 
 
 
@@ -20,7 +20,7 @@ public class FileUtil {
 
 
     public static void invalidateCache() {
-        cache.invalidateCache();
+        cache.invalidateCacheAll();
     }
 
 
@@ -29,7 +29,7 @@ public class FileUtil {
             oos.writeObject(object);
         }
 
-        cache.invalidate(destinationPath);
+        cache.invalidateCacheAll(); // for directory listing
     }
 
     public static <T> T readObjectFromFile(String filePath, Class<T> objectType) throws IOException {
@@ -145,19 +145,7 @@ public class FileUtil {
         fileOutputStream.close();
 
         cache.invalidate(desitnationPath);
-    }
-
-    public static void writeFile(String filePath, long position, String data) throws IOException {
-
-        try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
-            // Move to the desired position in the file
-            file.seek(position);
-
-            // Write data at the current position
-            file.write(data.getBytes());
-        }
-
-        cache.invalidate(filePath);
+        cache.invalidateCacheAll(); // for directory listing
     }
 
     public static void writeBytes(String filePath, long position, byte[] data) throws IOException {
@@ -280,18 +268,32 @@ public class FileUtil {
         cache.invalidate(filePath);
     }
 
-    public static void truncate(String filePath, Long newSizeInBytes) throws IOException {
+    public static void replaceFile(String filePath, List<WritePackage> writePackages) throws IOException {
+
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
-            file.setLength( newSizeInBytes );
+            file.setLength( 0 );
+            writePackages.forEach( writePackage -> {
+                try {
+                    // Move to the desired position in the file
+                    long offset = (writePackage.getOffsetInTable() == null)? file.length() : writePackage.getOffsetInTable();
+                    file.seek(offset);
+
+                    // Write data at the current position
+                    file.write( writePackage.getData() );
+
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
         }
 
         cache.invalidate(filePath);
     }
 
-    public static void createParentFolderIfNotExist(String filePath) throws IOException {
-
-        Path path = Paths.get(filePath);
-        Files.createDirectories(path.getParent());
+    public static void truncate(String filePath, Long newSizeInBytes) throws IOException {
+        try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
+            file.setLength( newSizeInBytes );
+        }
 
         cache.invalidate(filePath);
     }
@@ -301,7 +303,7 @@ public class FileUtil {
         Path path = Paths.get(directoryPath);
         Files.createDirectories(path);
 
-        cache.invalidate(directoryPath);
+        cache.invalidateCacheAll(); // for directory listing
     }
 
     public static void moveFilesToDirectory(List<File> sourceFiles, String destinationDirectory) throws IOException {
@@ -321,14 +323,31 @@ public class FileUtil {
             Files.move(sourcePath, destinationPath, StandardCopyOption.REPLACE_EXISTING);
         }
 
-        sourceFiles.forEach(file ->
-            cache.invalidate(file.getPath())
-        );
-        cache.invalidate(destinationDirectory);
+        cache.invalidateCacheAll(); // for directory listing
+    }
+
+    public static void copyFilesToDirectory(List<File> sourceFiles, String destinationDirectory) throws IOException {
+
+        File destinationDir = new File(destinationDirectory);
+        if (!destinationDir.exists()) {
+            boolean created = destinationDir.mkdirs();
+            if (!created) {
+                throw new IOException("DAVA Failed to create directory: " + destinationDirectory);
+            }
+        }
+
+        for (File sourceFile : sourceFiles) {
+            Path sourcePath = sourceFile.toPath();
+            Path destinationPath = destinationDir.toPath().resolve(sourceFile.getName());
+
+            Files.copy(sourcePath, destinationPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        cache.invalidateCacheAll(); // for directory listing
     }
 
     public static boolean createFile(String filePath) throws IOException {
-        cache.invalidate(filePath);
+        cache.invalidateCacheAll(); // for directory listing
         return new File(filePath).createNewFile();
     }
 
@@ -339,7 +358,7 @@ public class FileUtil {
         writeBytes(filePath, 0, content);
 
 
-        cache.invalidate(filePath);
+        cache.invalidateCacheAll(); // for directory listing
         return success;
     }
 
@@ -353,102 +372,8 @@ public class FileUtil {
             success = oldFile.renameTo(newFile);
         }
 
-        cache.invalidate(oldFilePath);
-        cache.invalidate(newFilePath);
+        cache.invalidateCacheAll(); // for directory listing
         return success;
-    }
-
-    public static File[] listFiles(String path) {
-        return cache.get(path, Cache.hash("listFiles"), () ->
-            new File(path).listFiles()
-        );
-    }
-
-    public static List<File> getSubFolders(String path) {
-        return cache.get(path, Cache.hash("getSubFolders"), () -> {
-            File[] files = FileUtil.listFiles(path);
-            if (files != null && files.length > 0) {
-                return Arrays.stream(files)
-                    .filter(File::isDirectory)
-                    .toList();
-            }
-            return new ArrayList<>();
-        });
-    }
-
-    public static List<File> getSubFiles(String path) {
-        return cache.get(path, Cache.hash("getSubFiles"), () -> {
-            File[] files = FileUtil.listFiles(path);
-            if (files != null && files.length > 0) {
-                return Arrays.stream(files)
-                    .filter(File::isFile)
-                    .toList();
-            }
-            return new ArrayList<>();
-        });
-    }
-
-    public static List<File> getLeafFolders(String directory) {
-        List<File> leaves = new ArrayList<>();
-
-        List<File> files = List.of(new File(directory));
-        do {
-            files = files.parallelStream()
-                .flatMap( file -> {
-                    List<File> subFiles = cache.get(file.getPath(), Cache.hash("listFiles"), () ->
-                        Arrays.stream(file.listFiles())
-                        .filter(File::isDirectory)
-                        .toList()
-                    );
-                    if (subFiles.isEmpty()) {
-                        leaves.add(file);
-                    }
-                    return subFiles.stream();
-                })
-                .toList();
-
-        } while (!files.isEmpty());
-
-        return leaves;
-    }
-
-    public static List<File> getSubFoldersRecursive(String directory) {
-
-        List<File> newFiles = cache.get(directory, Cache.hash("listFiles"), () ->
-            Arrays.stream(new File(directory).listFiles())
-                .filter(File::isDirectory)
-                .toList()
-        );
-
-        List<File> files = new ArrayList<>(newFiles);
-
-        while(!newFiles.isEmpty()) {
-            newFiles = newFiles.parallelStream()
-                .flatMap(file -> cache.get(file.getPath(), Cache.hash("listFiles"), () ->
-                    Arrays.stream(file.listFiles())
-                ))
-                .filter(File::isDirectory)
-                .toList();
-
-            files.addAll(newFiles);
-        }
-
-        return files;
-    }
-
-    public static long getSubFilesAndFolderCount(String directory) throws IOException {
-        return cache.get(directory, Cache.hash("getSubFilesAndFolderCount"), () -> {
-            Path dir = Paths.get(directory);
-            try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
-                int count = 0;
-                for (Path ignored : stream) {
-                    count++;
-                }
-                return count;
-            }
-        });
-
-
     }
 
     public static boolean exists(String filePath) {
@@ -516,7 +441,15 @@ public class FileUtil {
             }
         }
 
-        cache.invalidate(filePath);
+        cache.invalidateCacheAll(); // for directory listing
+        return success;
+    }
+
+    public static boolean deleteFile(File file) throws IOException {
+
+        boolean success = file.delete();
+
+        cache.invalidateCacheAll(); // for directory listing
         return success;
     }
 
@@ -527,14 +460,12 @@ public class FileUtil {
             @Override
             public FileVisitResult visitFile(Path path, BasicFileAttributes basicFileAttributes) throws IOException {
                 Files.delete(path); // Delete files
-                cache.invalidate(path.toString());
                 return FileVisitResult.CONTINUE;
             }
             @Override
             public FileVisitResult postVisitDirectory(Path path, IOException e) throws IOException {
                 if (path != null) {
                     Files.delete(path); // Delete directories after their contents
-                    cache.invalidate(path.toString());
                     return FileVisitResult.CONTINUE;
                 } else {
                     throw e;
@@ -545,6 +476,114 @@ public class FileUtil {
             @Override
             public FileVisitResult visitFileFailed(Path path, IOException e) { return FileVisitResult.CONTINUE; }
         });
+        cache.invalidateCacheAll(); // for directory listing
     }
+
+
+
+    /*
+           TODO action below require us to invalidate the entire cache in some of the methods above,
+                decide if we should be smarter about which cache entries to invalidate.
+     */
+
+    public static File[] listFiles(String path) {
+        return cache.get(path, Cache.hash("listFiles"), () ->
+            new File(path).listFiles()
+        );
+    }
+
+    public static List<File> getSubFolders(String path) {
+        return cache.get(path, Cache.hash("getSubFolders"), () -> {
+            File[] files = FileUtil.listFiles(path);
+            if (files != null && files.length > 0) {
+                return Arrays.stream(files)
+                    .filter(File::isDirectory)
+                    .toList();
+            }
+            return new ArrayList<>();
+        });
+    }
+
+    public static List<File> getSubFiles(String path) {
+        return cache.get(path, Cache.hash("getSubFiles"), () -> {
+            File[] files = FileUtil.listFiles(path);
+            if (files != null && files.length > 0) {
+                return Arrays.stream(files)
+                    .filter(File::isFile)
+                    .toList();
+            }
+            return new ArrayList<>();
+        });
+    }
+
+    public static List<File> getLeafFolders(String directory) {
+        List<File> leaves = new ArrayList<>();
+        List<File> files = List.of(new File(directory));
+        do {
+            files = files.parallelStream()
+                .flatMap( file -> {
+                    List<File> subFiles = Arrays.stream(
+                        cache.get(file.getPath(), Cache.hash("listFiles"), () ->
+                            file.listFiles()
+                        )
+                    ).filter(File::isDirectory)
+                    .toList();
+
+                    if (subFiles.isEmpty()) {
+                        leaves.add(file);
+                    }
+                    return subFiles.stream();
+                })
+                .toList();
+
+        } while (!files.isEmpty());
+
+        return leaves;
+    }
+
+    public static List<File> getSubFoldersRecursive(String directory) {
+
+        List<File> newFiles = Arrays.stream(
+            cache.get(directory, Cache.hash("listFiles"), () ->
+                new File(directory).listFiles()
+            )
+        ).filter(File::isDirectory)
+        .toList();
+
+        List<File> files = new ArrayList<>(newFiles);
+
+        while(!newFiles.isEmpty()) {
+            newFiles = newFiles.parallelStream()
+                .flatMap(file ->
+                    Arrays.stream(
+                        cache.get(file.getPath(), Cache.hash("listFiles"), () ->
+                            file.listFiles()
+                        )
+                    )
+                )
+                .filter(File::isDirectory)
+                .toList();
+
+            files.addAll(newFiles);
+        }
+
+        return files;
+    }
+
+    public static long getSubFilesAndFolderCount(String directory) throws IOException {
+        return cache.get(directory, Cache.hash("getSubFilesAndFolderCount"), () -> {
+            Path dir = Paths.get(directory);
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
+                int count = 0;
+                for (Path ignored : stream) {
+                    count++;
+                }
+                return count;
+            }
+        });
+
+
+    }
+
 
 }
