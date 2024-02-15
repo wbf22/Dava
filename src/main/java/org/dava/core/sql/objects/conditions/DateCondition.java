@@ -66,6 +66,10 @@ public abstract class DateCondition<T extends Date<?>> implements Condition {
                         compareYearsFolderToYearDateYear,
                         descending
                     );
+                    
+                    if (yearfolders.isEmpty()) {
+                        return 0L;
+                    }
 
                     String path = Index.buildColumnPath(table.getDatabaseRoot(), table.getTableName(), partition, columnName);
                     path += "/" + yearfolders.get(yearfolders.size() - 1);

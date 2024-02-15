@@ -66,4 +66,10 @@ public class ZonedDate extends Date<ZonedDateTime> {
         }
         return this.getDateWithoutTime().compareTo(other.getDateWithoutTime());
     }
+
+
+    @Override
+    public Long getHoursSinceEpoch() {
+        return this.zonedDateTime.toEpochSecond() / SECONDS_IN_HOUR;
+    }
 }

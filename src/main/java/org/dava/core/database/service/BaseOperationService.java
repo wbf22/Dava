@@ -32,7 +32,7 @@ import static org.dava.core.database.objects.exception.ExceptionType.*;
  */
 public class BaseOperationService {
 
-    public static int NUMERIC_PARTITION_SIZE = 1000000;
+    public static int NUMERIC_PARTITION_SIZE = 10;//1000000
 
 
 

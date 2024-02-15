@@ -47,6 +47,7 @@ public class Batch {
         this.numericCountFileChanges = new HashMap<>();
     }
 
+    
     public static Batch parse(List<String> lines, Table<?> table, String partition) {
         Map<String, List<IndexWritePackage>> writeGroups = new HashMap<>();
         List<RowWritePackage> rowsWritten = new ArrayList<>();
@@ -208,6 +209,7 @@ public class Batch {
 
         return batch;
     }
+
 
     public void addIndexWritePackage(String indexPath, IndexWritePackage writePackage) {
         if ( indexPathToIndicesWritten.containsKey(indexPath ) ) {

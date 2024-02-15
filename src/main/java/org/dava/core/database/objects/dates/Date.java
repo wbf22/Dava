@@ -14,6 +14,8 @@ public abstract class Date<T> implements Comparable<Date<T>> {
     protected String stringValue;
     protected Class<T> type;
 
+    public static final long SECONDS_IN_HOUR = 3600;
+
 
 
     public abstract boolean isAfter(Date<?> date);
@@ -21,6 +23,8 @@ public abstract class Date<T> implements Comparable<Date<T>> {
     public abstract boolean isBefore(Date<?> date);
 
     public abstract boolean isBetween(Date<?> start, Date<?> end);
+
+    public abstract Long getHoursSinceEpoch();
 
     public abstract LocalDate getDateWithoutTime();
 

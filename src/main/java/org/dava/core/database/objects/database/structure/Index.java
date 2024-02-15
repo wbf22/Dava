@@ -10,6 +10,7 @@ import java.io.File;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -128,7 +129,7 @@ public class Index {
                 value = Date.ofOrLocalDateOnFailure(
                     value.toString(),
                     column.getType()
-                ).getDateWithoutTime().toString();
+                ).getDateWithoutTime().atStartOfDay().atOffset(ZoneOffset.UTC).toInstant().toEpochMilli();
         }
 
         // limit file name less than 255 bytes for ext4 file system

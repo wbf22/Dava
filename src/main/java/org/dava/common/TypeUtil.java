@@ -17,4 +17,5 @@ public class TypeUtil {
         return type == int.class || type == long.class || type == double.class
             || type == float.class || type == short.class || type == byte.class;
     }
+
 }

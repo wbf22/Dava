@@ -144,53 +144,35 @@ class HardOperationsTest {
         );
         List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
 
-        List<String> lines = BaseOperationService.getFileSizeAndRoutes(
-                "db/Order/META_Order/discount/4.index",
-                "Order",
-                0L,
-                null
-            ).getSecond().stream()
-            .map(route -> {
-                try {
-                    return new String(
-                        FileUtil.readBytes(table.getTablePath("Order"), route.getOffsetInTable(), route.getLengthInTable()),
-                        StandardCharsets.UTF_8
-                    );
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            })
-            .filter(line -> line.contains("order_86B122D"))
-            .toList();
+        // List<String> lines = BaseOperationService.getFileSizeAndRoutes(
+        //         "db/Order/META_Order/discount/4.index",
+        //         "Order",
+        //         0L,
+        //         null
+        //     ).getSecond().stream()
+        //     .map(route -> {
+        //         try {
+        //             return new String(
+        //                 FileUtil.readBytes(table.getTablePath("Order"), route.getOffsetInTable(), route.getLengthInTable()),
+        //                 StandardCharsets.UTF_8
+        //             );
+        //         } catch (IOException e) {
+        //             throw new RuntimeException(e);
+        //         }
+        //     })
+        //     .filter(line -> line.contains("order_86B122D"))
+        //     .toList();
 
 
         Delete delete = new Delete(database, table);
         delete.delete(rows);
 
-        List<String> x = BaseOperationService.getFileSizeAndRoutes(
-                "db/Order/META_Order/discount/4.index",
-                "Order",
-                0L,
-                null
-            ).getSecond().stream()
-            .map(route -> {
-                try {
-                    return new String(
-                        FileUtil.readBytes(table.getTablePath("Order"), route.getOffsetInTable(), route.getLengthInTable()),
-                        StandardCharsets.UTF_8
-                    );
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
-            })
-            .filter(line -> line.contains("order_86B122D"))
-            .toList();
 
         Equals equals = new Equals("discount", "4");
         List<Row> postDeleteRows = equals.retrieve(table, new ArrayList<>(), null, null);
         postDeleteRows.forEach( row -> {
             OffsetDate rowDate = OffsetDate.of(row.getValue("time").toString());
-            rowDate.isAfter(date);
+            assertTrue(rowDate.isAfter(date));
         });
 
         OffsetDate andDate = OffsetDate.of(OffsetDateTime.now().minusYears(1));

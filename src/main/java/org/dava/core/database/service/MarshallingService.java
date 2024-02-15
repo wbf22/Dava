@@ -90,6 +90,7 @@ public class MarshallingService {
         return parsedRows;
     }
 
+    
     private static <T> Object getFieldValueUsingGetter(T row, Field field) {
         String getterMethodName = "get" +
             field.getName().substring(0, 1).toUpperCase() +

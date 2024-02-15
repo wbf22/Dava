@@ -64,4 +64,10 @@ public class BasicDate extends Date<LocalDate> {
         }
         return this.getDateWithoutTime().compareTo(other.getDateWithoutTime());
     }
+
+
+    @Override
+    public Long getHoursSinceEpoch() {
+        return this.localDate.atStartOfDay(ZoneOffset.UTC).toEpochSecond() / SECONDS_IN_HOUR;
+    }
 }

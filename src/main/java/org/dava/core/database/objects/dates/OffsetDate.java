@@ -77,4 +77,10 @@ public class OffsetDate extends Date<OffsetDateTime> {
         }
         return this.getDateWithoutTime().compareTo(other.getDateWithoutTime());
     }
+
+
+    @Override
+    public Long getHoursSinceEpoch() {
+        return this.offsetDateTime.toEpochSecond() / SECONDS_IN_HOUR;
+    }
 }

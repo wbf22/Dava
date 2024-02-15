@@ -4,6 +4,7 @@ import org.dava.core.database.objects.exception.DavaException;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 import static org.dava.core.database.objects.exception.ExceptionType.DATE_PARSE_ERROR;
 
@@ -66,5 +67,11 @@ public class BasicDateTime extends Date<LocalDateTime> {
             return this.localDateTime.compareTo(otherBasic.localDateTime);
         }
         return this.getDateWithoutTime().compareTo(other.getDateWithoutTime());
+    }
+
+
+    @Override
+    public Long getHoursSinceEpoch() {
+        return this.localDateTime.toEpochSecond(ZoneOffset.UTC) / SECONDS_IN_HOUR;
     }
 }
