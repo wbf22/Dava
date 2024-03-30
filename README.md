@@ -1,4 +1,4 @@
-# Dava
+# Dava (in progress)
 Java managed database. 
 
 For the intended benefits:
