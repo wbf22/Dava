@@ -116,6 +116,11 @@ public class Index {
         return databaseRoot + "/" + tableName + "/META_" + partition + "/" + columnName;
     }
 
+    public static String getParitionFromPath(String databaseRoot, String tableName, String path) {
+        String pathStart = databaseRoot + "/" + tableName;
+        return path.replace(pathStart, "").split("/")[1].replace("META_", "");
+    }
+
 
 
     public static Object prepareValueForIndexName(Object value, Column<?> column) {
@@ -129,7 +134,7 @@ public class Index {
                 value = Date.ofOrLocalDateOnFailure(
                     value.toString(),
                     column.getType()
-                ).getDateWithoutTime().atStartOfDay().atOffset(ZoneOffset.UTC).toInstant().toEpochMilli();
+                ).getHoursSinceEpoch();
         }
 
         // limit file name less than 255 bytes for ext4 file system

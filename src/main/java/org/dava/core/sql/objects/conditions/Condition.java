@@ -21,8 +21,12 @@ public interface Condition {
 
     List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Long limit, Long offset);
 
+    /**
+     * Used for evaluating AND and OR conditions more efficiently. 
+     * @param table
+     * @return
+     */
     Long getCountEstimate(Table<?> table); // could return real count. but types some like dates give estimate
-
 
 
 
@@ -74,6 +78,18 @@ public interface Condition {
             );
     }
 
+    /**
+     * This method handles the logistics of a certain amount of rows at a certain offset.
+     * 
+     * The function provided actually gets the rows given a start and end index. 
+     * 
+     * @param table
+     * @param parentFilters
+     * @param limit
+     * @param offset
+     * @param functionToGetRows
+     * @return
+     */
     default List<Row> getRowsLimited(
             Table<?> table,
             List<Condition> parentFilters,
@@ -119,6 +135,7 @@ public interface Condition {
 
         return limit(rows, limit, offset);
     }
+
 
     default List<Row> limit(List<Row> rows, Long limit, long offset) {
         if (limit != null) {

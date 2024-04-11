@@ -1,9 +1,12 @@
 package org.dava.core.database.objects.database.structure;
 
+import org.dava.common.TypeUtil;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
 
+import java.math.BigDecimal;
 import java.util.*;
+import java.util.Map.Entry;
 
 import static org.dava.common.Checks.*;
 import static org.dava.core.database.objects.exception.ExceptionType.CORRUPTED_ROW_ERROR;
@@ -26,11 +29,7 @@ public class Row {
                 Column<?> column = list.get(i).getValue();
                 columnsToValues.put(
                     column.getName(),
-                    mapIfTrue(
-                        Date.isDateSupportedDateType(column.getType()),
-                        values.get(i),
-                        stringValue -> Date.of(stringValue, column.getType())
-                    )
+                    parseValue(column.getType(), values.get(i))
                 );
             }
             tableName = table.getTableName();
@@ -41,6 +40,16 @@ public class Row {
                 e
             );
         }
+    }
+
+    public static Object parseValue(Class<?> columnType, String stringValue) {
+        if (TypeUtil.isNumericClass(columnType)){
+            return new BigDecimal(stringValue);
+        }
+        if (Date.isDateSupportedDateType(columnType)) {
+            return Date.of(stringValue, columnType);
+        }
+        return stringValue;
     }
 
     public static List<String> getValuesFromLine(String line) {
@@ -140,4 +149,32 @@ public class Row {
             .orElse(false);
    }
 
+    @Override
+    public String toString() {
+        StringBuilder builder = new StringBuilder();
+        for (Object obj : columnsToValues.values()) {
+            builder.append(obj).append(", ");
+        }
+        return builder.substring(0, builder.length()-2);
+    }
+
+    public String toStringColumns(Set<String> columns) {
+        StringBuilder builder = new StringBuilder();
+        for (String column : columns) {
+            Object obj = columnsToValues.get(column);
+            builder.append(obj).append(", ");
+        }
+        return builder.substring(0, builder.length()-2);
+    }
+
+
+    public String toStringExcludeColumns(Set<String> columnsToExclude) {
+        StringBuilder builder = new StringBuilder();
+        for (Entry<String, Object> entry : columnsToValues.entrySet()) {
+            if (!columnsToExclude.contains(entry.getKey())) {
+                builder.append(entry.getValue()).append(", ");
+            }
+        }
+        return builder.substring(0, builder.length()-2);
+    }
 }

@@ -3,6 +3,7 @@ package org.dava.core.database.service;
 
 import org.dava.common.ArrayUtil;
 import org.dava.common.Bundle;
+import org.dava.common.Node;
 import org.dava.common.TypeUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.Date;
@@ -16,9 +17,11 @@ import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.function.BiPredicate;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -91,17 +94,7 @@ public class BaseOperationService {
                         value
                     );
 
-                    List<Route> routes = getFileSizeAndRoutes(
-                        indexPath,
-                        partition,
-                        startRow * 10,
-                        (endRow == null)? null : (int) (endRow - startRow) * 10
-                    ).getSecond();
-
-                    List<String> lines = getLinesUsingRoutes(partition, table, routes);
-
-                    return IntStream.range(0, lines.size())
-                        .mapToObj(i -> new Row(lines.get(i), table, routes.get(i)));
+                    return getRowsFromIndex(indexPath, table, partition, startRow, endRow);
                 })
                 .toList();
         }
@@ -119,6 +112,20 @@ public class BaseOperationService {
                 .toList();
         }
 
+    }
+
+    private static Stream<Row> getRowsFromIndex(String indexPath, Table<?> table, String partition, long startRow, Long endRow) {
+        List<Route> routes = getFileSizeAndRoutes(
+            indexPath,
+            partition,
+            startRow * 10,
+            (endRow == null)? null : (int) (endRow - startRow) * 10
+        ).getSecond();
+
+        List<String> lines = getLinesUsingRoutes(partition, table, routes);
+
+        return IntStream.range(0, lines.size())
+            .mapToObj(i -> new Row(lines.get(i), table, routes.get(i)));
     }
 
     public static List<Row> getRowsFromTable(Table<?> table, long startRow, Long endRow) {
@@ -410,6 +417,195 @@ public class BaseOperationService {
     }
 
 
+    public static List<Row> getRowsComparingNumeric(
+        Table<?> table,
+        String columnName,
+        Comparator<BigDecimal> compareValues,
+        Predicate<BigDecimal> filter,
+        Function<String, BigDecimal> fileNameConverter,
+        Long startRow,
+        Long endRow,
+        
+        boolean descending,
+        boolean getAllRows
+    ) {
+
+        Column<?> column = table.getColumn(columnName);
+
+
+        Comparator<String> compareFileNames = (first, second) -> {
+            return compareValues.compare(
+                fileNameConverter.apply(first), 
+                fileNameConverter.apply(second)
+            );
+        };
+        compareFileNames = (descending)? compareFileNames : compareFileNames.reversed();
+
+
+        Comparator<Row> comparatorRows = Comparator.comparing(
+            row -> safeCast(row.getValue(columnName), BigDecimal.class)
+        );
+        comparatorRows = (descending)? comparatorRows.reversed() : comparatorRows;
+
+        Predicate<Row> filterRows = (row) -> {
+            BigDecimal value = safeCast(row.getValue(columnName), BigDecimal.class);
+            return filter.test(value);
+        };
+        filterRows = (descending)? filterRows.negate() : filterRows;
+
+        if (column.isIndexed() && !getAllRows) {
+
+            // get all the files in the root of the column folder for each table paritition (number folders or index files)
+            Deque<String> nextFiles = new ArrayDeque<>();
+            nextFiles.addAll(
+                table.getPartitions().parallelStream()
+                .flatMap(partition -> {
+                    String columnPath = Index.buildColumnPath(table.getDatabaseRoot(), table.getTableName(), partition, columnName);
+                    return Arrays.stream(FileUtil.listFiles(columnPath))
+                        .map(File::getPath)
+                        .filter(filePath -> {
+                            if (filePath.contains(".count")) return false;
+                            BigDecimal value = fileNameConverter.apply(filePath);
+                            return filter.test(value);
+                        });
+                })
+                .sorted(compareFileNames)
+                .toList()
+            );
+            
+            // walk through the files, not parsing rows less than the start row
+            List<Row> rows = new ArrayList<>();
+            boolean done = false;
+            int count = 0;
+            while (!done) {
+                
+                String file = nextFiles.pop();
+                File[] files = FileUtil.listFilesIfDirectory(file);
+                if (files != null) {
+                    // since equal value folders could have overlapping sub files we need to drill down through all of them to get the files in order
+                    List<String> newFilesToExplore = Arrays.stream(files)
+                        .map(File::getPath)
+                        .filter(filePath -> {
+                            if (filePath.contains(".count")) return false;
+                            BigDecimal value = fileNameConverter.apply(filePath);
+                            return filter.test(value);
+                        })
+                        .collect(Collectors.toList());
+
+                    String next = nextFiles.peek();
+                    if (next != null) {
+                        while (compareFileNames.compare(file, next) == 0) {
+                            newFilesToExplore.add(next);
+                            nextFiles.pop();
+                            next = nextFiles.peek();
+    
+    
+                            File[] otherFiles = FileUtil.listFilesIfDirectory(next);
+                            if (otherFiles == null) {
+                                newFilesToExplore.add(next);
+                            }
+                            else {
+                                newFilesToExplore.addAll(
+                                    Arrays.stream(otherFiles)
+                                        .map(File::getPath)
+                                        .toList()   
+                                );
+                            }
+                        }
+                    }
+                    
+
+                    // sort and add back into deque
+                    newFilesToExplore.sort(compareFileNames);
+                    nextFiles.addAll(newFilesToExplore);
+                }
+
+                // if we've made it to the start row start parsing rows
+                boolean isIndexFile = files == null;
+                if (isIndexFile) {
+                    if (count >= startRow) {
+                        String partition = Index.getParitionFromPath(table.getDatabaseRoot(), table.getTableName(), file);
+                        List<Row> newRows = getRowsFromIndex( file, table, partition, 0, null ).toList();
+                        rows.addAll( newRows );
+                        count += newRows.size();
+                    }
+                    else {
+                        count += getCountForIndexPath(file);
+                        if (count >= startRow) {
+                            String partition = Index.getParitionFromPath(table.getDatabaseRoot(), table.getTableName(), file);
+                            List<Row> newRows = getRowsFromIndex( file, table, partition, 0, null ).toList();
+                            rows.addAll( newRows );
+                        }
+                    }
+                }
+                
+                // check if we're done
+                done = nextFiles.isEmpty() || (endRow != null && count >= endRow);
+            }
+                
+            Long size = (endRow - startRow);
+            size = (size > rows.size())? rows.size() : size;
+            rows.sort(comparatorRows);
+            return rows.subList(0, size.intValue());
+        }
+        else {
+            List<Row> rows = getRowsFromTable(table, startRow, endRow).stream()
+                .filter(filterRows)
+                .toList();
+            
+            Long size = (endRow - startRow);
+            size = (size > rows.size())? rows.size() : size;
+            rows.sort(comparatorRows);
+            return rows.subList(0, size.intValue());
+        }
+    }
+
+    /**
+     * Converts a file name to big decimal. Only used for numeric queries really. 
+     * Folders that have a + in the name are null. (eg +10)
+     * @param fileName
+     * @return
+     */
+    public static BigDecimal convertFileNameToBigDecimalUpperNull(String fileName) {
+        fileName = Path.of(fileName).getFileName().toString();
+
+        fileName = fileName.replace(".index", "").replace("-", "");
+
+        if (fileName.contains("+"))
+            return null; // returning null hear to indicate this folder could be anything over it's value
+
+        return new BigDecimal(fileName);
+    };
+
+    /**
+     * Converts a file name to big decimal. Only used for numeric queries really. 
+     * Folders that have a - in the name are null. (eg -10)
+     * @param fileName
+     * @return
+     */
+    public static BigDecimal convertFileNameToBigDecimalLowerNull(String fileName) {
+        fileName = Path.of(fileName).getFileName().toString();
+
+        fileName = fileName.replace(".index", "").replace("+", "");
+
+        if (fileName.contains("-"))
+            return null; // returning null hear to indicate this folder could be anything over it's value
+
+        return new BigDecimal(fileName);
+    };
+
+
+    private static Stream<Long> getNumericIndexValuesInFolder(String folderPath, Long point,
+            BiPredicate<Long, Long> compareValues, boolean descending) {
+        return Arrays.stream(FileUtil.listFiles(folderPath))
+            .filter(File::isFile)
+            .map(file -> Long.parseLong(file.getName().split(".")[0]))
+            .filter(fileLong -> compareValues.test(fileLong, point))
+            .sorted(
+                descending ? Comparator.reverseOrder() : Comparator.naturalOrder()
+            );
+    }
+
     public static List<Row> getAllRows(Table<?> table, String partition) {
         return getAllLinesWithoutRoutes(
             table,
@@ -432,6 +628,17 @@ public class BaseOperationService {
                         descending ? Comparator.reverseOrder() : Comparator.naturalOrder()
                     );
             })
+            .sorted(
+                descending ? Comparator.reverseOrder() : Comparator.naturalOrder()
+            )
+            .toList();
+    }
+
+    public static List<Long> getNumericFolders(String columnPath, Long point, BiPredicate<Long, Long> compareValues, boolean descending) {
+        return Arrays.stream(FileUtil.listFiles(columnPath))
+            .filter(File::isDirectory)
+            .map(folder -> Long.parseLong(folder.getName().substring(1)))
+            .filter(folderLong -> compareValues.test(folderLong, point))
             .sorted(
                 descending ? Comparator.reverseOrder() : Comparator.naturalOrder()
             )
@@ -500,7 +707,7 @@ public class BaseOperationService {
     }
 
     public static long getCountForIndexPath(String path) {
-        return FileUtil.fileSize(path);
+        return FileUtil.fileSize(path) / 10;
     }
 
     public static long getCountFromCountFile(String path) {

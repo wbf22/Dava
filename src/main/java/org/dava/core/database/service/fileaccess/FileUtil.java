@@ -492,6 +492,16 @@ public class FileUtil {
         );
     }
 
+    public static File[] listFilesIfDirectory(String path) {
+        return cache.get(path, Cache.hash("listFilesIfDirectory"), () -> {
+            File file = new File(path);
+            if (file.isDirectory()) {
+                return file.listFiles();
+            }
+            return null;
+        });
+    }
+
     public static List<File> getSubFolders(String path) {
         return cache.get(path, Cache.hash("getSubFolders"), () -> {
             File[] files = FileUtil.listFiles(path);

@@ -10,6 +10,7 @@ import org.dava.core.sql.objects.conditions.After;
 import org.dava.core.sql.objects.conditions.All;
 import org.dava.core.sql.objects.conditions.Before;
 import org.dava.core.sql.objects.conditions.Equals;
+import org.dava.core.sql.objects.conditions.GreaterThan;
 import org.dava.core.sql.objects.logic.operators.And;
 import org.dava.external.DavaTSID;
 import org.dava.external.Order;
@@ -31,7 +32,9 @@ class BasicOperationsTest {
 
     static Database database;
     static int ITERATIONS = 1000;
-    static Level logLevel = Level.INFO;
+    static Level logLevel = Level.DEBUG;
+    // static Level logLevel = Level.INFO;
+
 //    static String DB_ROOT = "/Users/brandon.fowler/Desktop/db";
     static Mode TABLE_MODE = Mode.INDEX_ALL;
     static String DB_ROOT = "db";
@@ -374,7 +377,34 @@ class BasicOperationsTest {
     }
 
 
+    @Test
+    void greaterThan() {
+        Table<?> table = database.getTableByName("Order");
 
+        long offset = 5L;
+        BigDecimal value = BigDecimal.valueOf(10);
+
+        Timer timer = Timer.start();
+        GreaterThan greaterThan = new GreaterThan(
+                "total",
+                value,
+                true
+        );
+        List<Row> rows = greaterThan.retrieve(table, new ArrayList<>(), 10L, offset);
+        timer.printRestart();
+
+        log.debug(value.toString());
+        log.space();
+        StreamUtil.enumerate(rows, (i, row) -> {
+            log.debug( row.toStringExcludeColumns(Set.of("description")) );
+        });
+
+        rows.forEach( row -> {
+            assertTrue(
+                    safeCast(row.getValue("total"), BigDecimal.class).compareTo(value) > 0
+            );
+        });
+    }
 
 
 }
