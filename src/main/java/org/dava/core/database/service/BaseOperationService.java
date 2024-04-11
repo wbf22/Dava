@@ -3,7 +3,6 @@ package org.dava.core.database.service;
 
 import org.dava.common.ArrayUtil;
 import org.dava.common.Bundle;
-import org.dava.common.Node;
 import org.dava.common.TypeUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.Date;
@@ -425,7 +424,6 @@ public class BaseOperationService {
         Function<String, BigDecimal> fileNameConverter,
         Long startRow,
         Long endRow,
-        
         boolean descending,
         boolean getAllRows
     ) {
@@ -439,7 +437,7 @@ public class BaseOperationService {
                 fileNameConverter.apply(second)
             );
         };
-        compareFileNames = (descending)? compareFileNames : compareFileNames.reversed();
+        compareFileNames = (descending)? compareFileNames.reversed() : compareFileNames;
 
 
         Comparator<Row> comparatorRows = Comparator.comparing(
@@ -451,7 +449,10 @@ public class BaseOperationService {
             BigDecimal value = safeCast(row.getValue(columnName), BigDecimal.class);
             return filter.test(value);
         };
-        filterRows = (descending)? filterRows.negate() : filterRows;
+
+        Long size = null;
+        startRow = (startRow == null)? 0 : startRow;
+        if (startRow != null && endRow != null) size = (endRow - startRow);
 
         if (column.isIndexed() && !getAllRows) {
 
@@ -477,6 +478,7 @@ public class BaseOperationService {
             List<Row> rows = new ArrayList<>();
             boolean done = false;
             int count = 0;
+            int extra = 0;
             while (!done) {
                 
                 String file = nextFiles.pop();
@@ -532,6 +534,7 @@ public class BaseOperationService {
                     else {
                         count += getCountForIndexPath(file);
                         if (count >= startRow) {
+                            extra += (int) (count - startRow);
                             String partition = Index.getParitionFromPath(table.getDatabaseRoot(), table.getTableName(), file);
                             List<Row> newRows = getRowsFromIndex( file, table, partition, 0, null ).toList();
                             rows.addAll( newRows );
@@ -543,20 +546,23 @@ public class BaseOperationService {
                 done = nextFiles.isEmpty() || (endRow != null && count >= endRow);
             }
                 
-            Long size = (endRow - startRow);
-            size = (size > rows.size())? rows.size() : size;
+            if (size == null) 
+                size = rows.size() - startRow;
+            size = (extra + size > rows.size())? rows.size() : extra + size;
+
             rows.sort(comparatorRows);
-            return rows.subList(0, size.intValue());
+            return rows.subList(extra, size.intValue());
         }
         else {
-            List<Row> rows = getRowsFromTable(table, startRow, endRow).stream()
+            List<Row> rows = getRowsFromTable(table, 0, null).stream()
                 .filter(filterRows)
-                .toList();
+                .collect(Collectors.toList());
             
-            Long size = (endRow - startRow);
-            size = (size > rows.size())? rows.size() : size;
+            if (size == null) {
+                size = rows.size() - startRow;
+            }
             rows.sort(comparatorRows);
-            return rows.subList(0, size.intValue());
+            return rows.subList(startRow.intValue(), size.intValue());
         }
     }
 

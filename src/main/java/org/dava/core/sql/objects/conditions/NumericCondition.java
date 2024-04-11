@@ -19,6 +19,10 @@ public abstract class NumericCondition implements Condition {
 
     @Override
     public List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Long limit, Long offset) {
+        boolean getAllRows = limit == null && offset == null;
+        Long endRow = null;
+        if (offset != null && limit != null) endRow = offset + limit;
+
         return BaseOperationService.getRowsComparingNumeric(
             table,
             columnName,
@@ -26,9 +30,9 @@ public abstract class NumericCondition implements Condition {
             filter,
             fileNameConverter,
             offset,
-            offset + limit,
+            endRow,
             descending,
-            false
+            getAllRows
         );
     }
 

@@ -11,6 +11,7 @@ import org.dava.core.sql.objects.conditions.All;
 import org.dava.core.sql.objects.conditions.Before;
 import org.dava.core.sql.objects.conditions.Equals;
 import org.dava.core.sql.objects.conditions.GreaterThan;
+import org.dava.core.sql.objects.conditions.LessThan;
 import org.dava.core.sql.objects.logic.operators.And;
 import org.dava.external.DavaTSID;
 import org.dava.external.Order;
@@ -153,7 +154,7 @@ class BasicOperationsTest {
             log.debug(
                 Row.serialize(database.getTableByName(row.getTableName()), row.getColumnsToValues())
             );
-            assertEquals("25", row.getValue("total"));
+            assertEquals(BigDecimal.valueOf(25), row.getValue("total"));
         });
         assertTrue(rows.size() <= 10L);
     }
@@ -386,9 +387,9 @@ class BasicOperationsTest {
 
         Timer timer = Timer.start();
         GreaterThan greaterThan = new GreaterThan(
-                "total",
-                value,
-                true
+            "total",
+            value,
+            true
         );
         List<Row> rows = greaterThan.retrieve(table, new ArrayList<>(), 10L, offset);
         timer.printRestart();
@@ -402,6 +403,37 @@ class BasicOperationsTest {
         rows.forEach( row -> {
             assertTrue(
                     safeCast(row.getValue("total"), BigDecimal.class).compareTo(value) > 0
+            );
+        });
+    }
+
+
+
+    @Test
+    void lessThan() {
+        Table<?> table = database.getTableByName("Order");
+
+        long offset = 0L;
+        BigDecimal value = BigDecimal.valueOf(10);
+
+        Timer timer = Timer.start();
+        LessThan lessThan = new LessThan(
+                "total",
+                value,
+                true
+        );
+        List<Row> rows = lessThan.retrieve(table, new ArrayList<>(), 10L, offset);
+        timer.printRestart();
+
+        log.debug(value.toString());
+        log.space();
+        StreamUtil.enumerate(rows, (i, row) -> {
+            log.debug( row.toStringExcludeColumns(Set.of("description")) );
+        });
+
+        rows.forEach( row -> {
+            assertTrue(
+                    safeCast(row.getValue("total"), BigDecimal.class).compareTo(value) < 0
             );
         });
     }
