@@ -1,8 +1,8 @@
 package org.dava.core.database.service;
 
-import org.dava.common.ArrayUtil;
-import org.dava.common.Bundle;
-import org.dava.common.TypeUtil;
+import org.dava.core.common.ArrayUtil;
+import org.dava.core.common.Bundle;
+import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;

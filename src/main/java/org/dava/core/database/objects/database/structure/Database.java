@@ -36,8 +36,8 @@ public class Database {
 
     @SuppressWarnings("unchecked")
     public <T> Table<T> getTableForRow(T row) {
-        org.dava.external.annotations.Table annotation = row.getClass().getAnnotation(
-            org.dava.external.annotations.Table.class);
+        org.dava.api.annotations.Table annotation = row.getClass().getAnnotation(
+            org.dava.api.annotations.Table.class);
 
         try {
             String tableName = (annotation.name().isEmpty())? row.getClass().getName() : annotation.name();
@@ -146,4 +146,6 @@ public class Database {
             return new Database(builderRootDirectory, tableClasses, tableModes, randomSeed);
         }
     }
+
+
 }

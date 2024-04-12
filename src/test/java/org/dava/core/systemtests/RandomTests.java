@@ -1,7 +1,7 @@
 package org.dava.core.systemtests;
 
-import org.dava.common.Timer;
-import org.dava.common.logger.Logger;
+import org.dava.core.common.Timer;
+import org.dava.core.common.logger.Logger;
 import org.dava.core.database.objects.dates.ZonedDate;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.junit.jupiter.api.BeforeAll;

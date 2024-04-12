@@ -1,7 +1,8 @@
 package org.dava.core.database.service;
 
-import org.dava.common.Bundle;
-import org.dava.common.TypeUtil;
+import org.dava.core.database.objects.dates.Date;
+import org.dava.core.common.Bundle;
+import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
@@ -19,6 +20,7 @@ import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static org.dava.core.common.Checks.safeCast;
 import static org.dava.core.database.objects.exception.ExceptionType.*;
 
 
@@ -131,7 +133,7 @@ public class Insert {
         Map<String, List<String>> folderPathToIndexPaths = new HashMap<>();
         insertBatch.getIndexPathToIndicesWritten().forEach( (indexPath, writePackages) -> {
             IndexWritePackage firstPackage = writePackages.get(0);
-            if( TypeUtil.isNumericClass(firstPackage.getColumnType()) ) {
+            if( Index.isNumericallyIndexed(firstPackage.getColumnType()) ) {
                 String folderPath = firstPackage.getFolderPath();
                 List<String> indexPaths = folderPathToIndexPaths.get(folderPath);
                 if (indexPaths == null) {
@@ -149,15 +151,21 @@ public class Insert {
 
         foldersToRepartition.forEach(folderPath -> {
             List<String> affectedIndexPaths = folderPathToIndexPaths.get(folderPath);
+            BigDecimal defaultMedian = new BigDecimal(
+                Path.of( affectedIndexPaths.get(0) ).getFileName().toString()
+                    .replace(".index", "").replace("+", "").replace("-", "")
+            );
             if (affectedIndexPaths != null) {
-                BigDecimal median = BaseOperationService.repartitionNumericIndex(folderPath);
+                BigDecimal median = BaseOperationService.repartitionNumericIndex(folderPath, defaultMedian);
                 affectedIndexPaths.forEach(indexPath -> {
                     List<IndexWritePackage> writePackages = insertBatch.getIndexPathToIndicesWritten().get(indexPath);
 
                     insertBatch.getIndexPathToIndicesWritten().remove(indexPath);
-                    String numericValue = writePackages.get(0).getValue().toString();
+                    
+                    BigDecimal numericValue = new BigDecimal( writePackages.get(0).getValue().toString() );
+
                     StringBuilder newIndexPathBD = new StringBuilder(folderPath);
-                    if ( median.compareTo(new BigDecimal(numericValue)) > 0 ) {
+                    if ( median.compareTo(numericValue) > 0 ) {
                         newIndexPathBD.append("/-").append(median);
                     }
                     else {
@@ -263,44 +271,44 @@ public class Insert {
         Map<String, CountChange> countUpdates = new HashMap<>();
         Set<String> countedIndexPaths = new HashSet<>();
         writePackages.forEach( writePackage -> {
-                Row row = writePackage.getRow();
-                for (Map.Entry<String, Object> columnValue : row.getColumnsToValues().entrySet()) {
-                    Column<?> column = table.getColumn(columnValue.getKey());
+            Row row = writePackage.getRow();
+            for (Map.Entry<String, Object> columnValue : row.getColumnsToValues().entrySet()) {
+                Column<?> column = table.getColumn(columnValue.getKey());
 
-                    if (column.isIndexed()) {
-                        String folderPath = Index.buildIndexRootPath(
-                            database.getRootDirectory(),
-                            table,
-                            partition,
-                            column,
-                            columnValue.getValue()
+                if (column.isIndexed()) {
+                    String folderPath = Index.buildIndexRootPath(
+                        database.getRootDirectory(),
+                        table,
+                        partition,
+                        column,
+                        columnValue.getValue()
+                    );
+
+                    Object value = Index.prepareValueForIndexName(columnValue.getValue(), column);
+                    String indexPath = Index.indexPathBypass(folderPath, value);
+
+                    if ( Index.isNumericallyIndexed(column.getType()) && !FileUtil.exists(indexPath) && !countedIndexPaths.contains(indexPath)) {
+                        CountChange count = countUpdates.get(folderPath);
+                        countUpdates.put(
+                            folderPath,
+                            new CountChange(0L, (count == null)? 1L : count.getChange() + 1)
                         );
-
-                        Object value = Index.prepareValueForIndexName(columnValue.getValue(), column);
-                        String indexPath = Index.indexPathBypass(folderPath, value);
-
-                        if ( TypeUtil.isNumericClass(column.getType()) && !FileUtil.exists(indexPath) && !countedIndexPaths.contains(indexPath)) {
-                            CountChange count = countUpdates.get(folderPath);
-                            countUpdates.put(
-                                folderPath,
-                                new CountChange(0L, (count == null)? 1L : count.getChange() + 1)
-                            );
-                            countedIndexPaths.add(indexPath);
-                        }
-
-                        // add to batch
-                        insertBatch.addIndexWritePackage(
-                            indexPath,
-                            new IndexWritePackage(
-                                writePackage.getRoute(),
-                                column,
-                                value,
-                                folderPath
-                            )
-                        );
+                        countedIndexPaths.add(indexPath);
                     }
+
+                    // add to batch
+                    insertBatch.addIndexWritePackage(
+                        indexPath,
+                        new IndexWritePackage(
+                            writePackage.getRoute(),
+                            column,
+                            value,
+                            folderPath
+                        )
+                    );
                 }
-            });
+            }
+        });
 
         insertBatch.setNumericCountFileChanges(countUpdates);
         return insertBatch;

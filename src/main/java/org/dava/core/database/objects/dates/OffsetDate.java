@@ -2,6 +2,7 @@ package org.dava.core.database.objects.dates;
 
 import org.dava.core.database.objects.exception.DavaException;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -82,5 +83,11 @@ public class OffsetDate extends Date<OffsetDateTime> {
     @Override
     public Long getHoursSinceEpoch() {
         return this.offsetDateTime.toEpochSecond() / SECONDS_IN_HOUR;
+    }
+
+
+    @Override
+    public Instant getInstant() {
+        return this.offsetDateTime.toInstant();
     }
 }

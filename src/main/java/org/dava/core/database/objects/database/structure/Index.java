@@ -1,10 +1,12 @@
 package org.dava.core.database.objects.database.structure;
 
-import org.dava.common.HashUtil;
-import org.dava.common.TypeUtil;
+import org.dava.core.common.HashUtil;
+import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.fileaccess.FileUtil;
+
+import static org.dava.core.common.Checks.safeCast;
 
 import java.io.File;
 import java.math.BigDecimal;
@@ -14,8 +16,6 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-
-import static org.dava.common.Checks.safeCast;
 
 public class Index {
 
@@ -39,12 +39,17 @@ public class Index {
     }
 
     public static String buildIndexRootPath(String databaseRoot, Table<?> table, String partition, Column<?> column, Object value) {
-        if ( value instanceof Date<?> || Date.isDateSupportedDateType(column.getType()) ) {
-            Date<?> date = (value instanceof Date<?> dateFromValue)? dateFromValue : Date.ofOrLocalDateOnFailure(value.toString(), column.getType());
-            return buildIndexYearFolderForDate(table, partition, column.getName(), date.getYear().toString());
-        }
-        else if ( TypeUtil.isNumericClass(column.getType()) ) {
+        if ( Index.isNumericallyIndexed(column.getType()) ) {
             List<File> columnLeaves = table.getLeafList(partition, column.getName());
+            BigDecimal valueBd = null;
+
+            if ( value instanceof Date<?> || Date.isDateSupportedDateType(column.getType()) ) {
+                Date<?> date = (value instanceof Date<?> dateFromValue)? dateFromValue : Date.ofOrLocalDateOnFailure(value.toString(), column.getType());
+                valueBd = date.getMillisecondsSinceTheEpoch();
+            }
+            else {
+                valueBd = new BigDecimal( value.toString() );
+            }
 
             return findIndexPathForNumber(
                 databaseRoot,
@@ -52,7 +57,7 @@ public class Index {
                 partition,
                 column.getName(),
                 columnLeaves,
-                new BigDecimal( value.toString() )
+                valueBd
             );
         }
         return buildColumnPath(databaseRoot, table.getTableName(), partition, column.getName());
@@ -60,10 +65,6 @@ public class Index {
 
     public static String buildIndexYearFolderForDate(Table<?> table, String partition, String columnName, String year) {
         return buildColumnPath(table.getDatabaseRoot(), table.getTableName(), partition, columnName) + "/" + year;
-    }
-
-    public static String buildIndexPathForDate(String databaseRoot, String tableName, String partition, String columnName, LocalDate localDate) {
-        return buildColumnPath(databaseRoot, tableName, partition, columnName) + "/" + localDate.getYear() + "/" + localDate + ".index";
     }
 
     public static String findIndexPathForNumber(String databaseRoot, String tableName, String partition, String columnName, List<File> columnLeaves, BigDecimal value) {
@@ -125,16 +126,16 @@ public class Index {
 
     public static Object prepareValueForIndexName(Object value, Column<?> column) {
 
-        // if it's a date get the local data version
+        // if it's a date get the milliseconds since the epoch version
         if (Date.isDateSupportedDateType(column.getType() )) {
 
             if ( Date.isDateSupportedDateType( value.getClass() ) )
-                value = safeCast(value, Date.class).getDateWithoutTime();
+                value = safeCast(value, Date.class).getMillisecondsSinceTheEpoch();
             else
                 value = Date.ofOrLocalDateOnFailure(
                     value.toString(),
                     column.getType()
-                ).getHoursSinceEpoch();
+                ).getMillisecondsSinceTheEpoch();
         }
 
         // limit file name less than 255 bytes for ext4 file system
@@ -147,4 +148,8 @@ public class Index {
     }
 
 
+
+    public static boolean isNumericallyIndexed(Class<?> type) {
+        return TypeUtil.isDate(type) || TypeUtil.isNumericClass(type);
+    }
 }

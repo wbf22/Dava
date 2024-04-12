@@ -1,9 +1,10 @@
 package org.dava.core.database.service;
 
 
-import org.dava.common.ArrayUtil;
-import org.dava.common.Bundle;
-import org.dava.common.TypeUtil;
+import org.dava.core.common.ArrayUtil;
+import org.dava.core.common.Bundle;
+import org.dava.core.common.CheckException;
+import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
@@ -26,7 +27,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
-import static org.dava.common.Checks.safeCast;
+import static org.dava.core.common.Checks.safeCast;
 import static org.dava.core.database.objects.exception.ExceptionType.*;
 
 /**
@@ -49,10 +50,15 @@ public class BaseOperationService {
             if (!FileUtil.exists(folderPath)) {
                 FileUtil.createDirectoriesIfNotExist(folderPath);
 
-                // update numeric index counts
+                // update numeric or date index counts
                 if (TypeUtil.isNumericClass(indexWritePackages.get(0).getColumnType())) {
                     updateNumericCountFile(folderPath, 1);
                 }
+                if (TypeUtil.isDate(indexWritePackages.get(0).getColumnType())) {
+                    updateNumericCountFile(folderPath, 1);
+                }
+
+
             }
 
             String path = folderPath + "/" + value + ".index";
@@ -281,140 +287,6 @@ public class BaseOperationService {
 
     // TODO consider making a separate service for dates, or maybe just chopping up these methods
 
-    /**
-     *   |     |--OrderDate
-     *   |     |    |--2019
-     *   |     |    |    |--1/22/2019.index
-     *   |     |    |    |--4/12/2019.index
-     *   |     |    |    '--5/3/2019.index
-     *   |     |    |--2020
-     *   |     |    |    |--1/1/2020.index
-     *   |     |    |    |--1/3/2020.index
-     *   |     |    |    '--1/4/2020.index
-     *
-     *
-     *   |     |--OrderDate
-     *   |     |    |--2020
-     *   |     |    |    |--1/2/2020.index
-     *   |     |    |    |--1/5/2020.index
-     *   |     |    |    '--1/6/2020.index
-     *
-     *   02/12/2020.index values:
-     *     2020-2-12T07:5:57.703778
-     *     2020-2-12T07:16:57.703778
-     *     2020-2-12T07:21:57.703778
-     *
-     *
-     *   sql after calls return unsorted unless called with order by
-     */
-    public static List<Row> getRowsComparingDate(
-            Table<?> table,
-            String columnName,
-            Date<?> date,
-            BiPredicate<Integer, Integer> compareYearsFolderYearDateYear,
-            BiPredicate<Date<?>, Date<?>> compareDatesRowYearDateYear,
-            long startRow,
-            long endRow,
-            boolean descending
-    ) {
-
-        Column<?> column = table.getColumn(columnName);
-
-        if (column.isIndexed()) {
-
-            // all year folders within partitions, filtered by after date, sorted descending or ascending
-            List<Integer> yearDatesFolders = getYearDateFolders(table, columnName, date, compareYearsFolderYearDateYear, descending);
-
-
-            List<Row> rows = new ArrayList<>();
-            Comparator<Row> comparator = Comparator.comparing(
-                row -> safeCast(row.getValue(columnName), Date.class)
-            );
-            comparator = (descending)? comparator.reversed() : comparator;
-
-            long count = 0L;
-            int size = (int) (endRow - startRow);
-            for (Integer year : yearDatesFolders) {
-                // get date files for year
-                List<LocalDate> indicesForLocalDates = table.getPartitions().parallelStream()
-                    .flatMap(partition -> {
-                        String yearPath = Index.buildIndexYearFolderForDate(table, partition, columnName, year.toString());
-                        return Arrays.stream(FileUtil.listFiles(yearPath))
-                            .map( indexFile -> LocalDate.parse(indexFile.getName().split("\\.")[0]) );
-                    })
-                    .sorted(
-                        (descending)? Comparator.reverseOrder() : Comparator.naturalOrder()
-                    )
-                    .toList();
-
-                // for each of the indexLocalDate in indicesForLocalDates, count up until you get to start row
-                for (LocalDate indexLocalDate : indicesForLocalDates) {
-                    if (count <= startRow) {
-                        count += table.getPartitions().parallelStream()
-                            .map(partition -> {
-                                Date<?> indexLocateDate = Date.of(indexLocalDate.toString(), LocalDate.class);
-
-                                if ( compareDatesRowYearDateYear.test(indexLocateDate, date) ) {
-                                    String path = Index.buildIndexPathForDate(table.getDatabaseRoot(), table.getTableName(), partition, columnName, indexLocalDate);
-                                    return getCountForIndexPath(path);
-                                }
-                                else if (indexLocalDate.equals(date.getDateWithoutTime())) {
-                                    return (long) getRowsFromTable( table, columnName, indexLocalDate.toString(), 0, null ).stream()
-                                        .filter(row -> {
-                                            Date<?> rowDate = safeCast(row.getValue(columnName), Date.class);
-                                            return compareDatesRowYearDateYear.test(rowDate, date);
-                                        })
-                                        .toList()
-                                        .size();
-                                }
-                                return 0L;
-                            })
-                            .reduce(Long::sum)
-                            .orElse(0L);
-                    }
-
-
-                    if (count > startRow) {
-                        List<Row> returned = table.getPartitions().parallelStream()
-                            .flatMap(partition ->
-                                         getRowsFromTable(table, columnName, indexLocalDate.toString(), 0, null ).stream()
-                            )
-                            .toList();
-
-                        if (indexLocalDate.getYear() == year) {
-                            returned = returned.stream()
-                                .filter(row -> {
-                                    Date<?> rowDate = safeCast(row.getValue(columnName), Date.class);
-                                    return compareDatesRowYearDateYear.test(rowDate, date);
-                                })
-                                .toList();
-                        }
-
-                        rows.addAll(returned);
-
-                        // once you have enough rows, sort the rows descending or ascending and return the sublist of the requested size
-                        if (rows.size() > size) {
-                            return rows.stream()
-                                .sorted( comparator )
-                                .toList()
-                                .subList(0, size);
-                        }
-                    }
-                }
-            }
-
-            return rows.stream()
-                .sorted( comparator )
-                .toList();
-        }
-        else {
-            List<Row> rows =  getAllComparingDate(table, columnName, compareYearsFolderYearDateYear, compareDatesRowYearDateYear, date, descending)
-                .toList();
-            return (rows.size() > endRow - startRow)? rows.subList((int) startRow, (int) endRow) : rows;
-        }
-
-    }
-
 
     public static List<Row> getRowsComparingNumeric(
         Table<?> table,
@@ -441,12 +313,27 @@ public class BaseOperationService {
 
 
         Comparator<Row> comparatorRows = Comparator.comparing(
-            row -> safeCast(row.getValue(columnName), BigDecimal.class)
+            row -> {
+                Object rowValue = row.getValue(columnName);
+                if (rowValue instanceof BigDecimal bd) 
+                    return bd;
+                else {
+                    Date<?> date = safeCast(rowValue, Date.class);
+                    return date.getMillisecondsSinceTheEpoch();
+                }
+            }
         );
         comparatorRows = (descending)? comparatorRows.reversed() : comparatorRows;
 
         Predicate<Row> filterRows = (row) -> {
-            BigDecimal value = safeCast(row.getValue(columnName), BigDecimal.class);
+            BigDecimal value = null;
+            Object rowValue = row.getValue(columnName);
+            if (rowValue instanceof BigDecimal bd) 
+                value = bd;
+            else {
+                Date<?> date = safeCast(rowValue, Date.class);
+                value = date.getMillisecondsSinceTheEpoch();
+            }
             return filter.test(value);
         };
 
@@ -742,7 +629,7 @@ public class BaseOperationService {
 
     }
 
-    public static BigDecimal repartitionNumericIndex(String folderPath) {
+    public static BigDecimal repartitionNumericIndex(String folderPath, BigDecimal defaultMedian) {
         try {
             String countFile = folderPath + "/c.count";
             File[] files = FileUtil.listFiles(folderPath);
@@ -750,7 +637,7 @@ public class BaseOperationService {
             int step = files.length / 5;
             List<BigDecimal> samples = IntStream.range(0, 5)
                 .mapToObj(i ->
-                              (files[i * step].getName().contains(".index")) ? new BigDecimal(files[i * step].getName().split("\\.")[0]) : BigDecimal.TEN
+                    (files[i * step].getName().contains(".index")) ? new BigDecimal(files[i * step].getName().split("\\.")[0]) : defaultMedian
                 )
                 .sorted(BigDecimal::compareTo)
                 .toList();

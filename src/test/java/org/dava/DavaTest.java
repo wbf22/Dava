@@ -2,7 +2,7 @@ package org.dava;
 
 import java.util.logging.Logger;
 
-import org.dava.external.DavaId;
+import org.dava.api.DavaId;
 import org.junit.jupiter.api.Test;
 
 public class DavaTest {

@@ -1,6 +1,6 @@
 package org.dava.core.database.objects.database.structure;
 
-import org.dava.common.ArrayUtil;
+import org.dava.core.common.ArrayUtil;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
 import java.util.List;

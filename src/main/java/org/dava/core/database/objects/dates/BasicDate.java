@@ -2,6 +2,7 @@ package org.dava.core.database.objects.dates;
 
 import org.dava.core.database.objects.exception.DavaException;
 
+import java.math.BigDecimal;
 import java.time.*;
 
 import static org.dava.core.database.objects.exception.ExceptionType.DATE_PARSE_ERROR;
@@ -70,4 +71,12 @@ public class BasicDate extends Date<LocalDate> {
     public Long getHoursSinceEpoch() {
         return this.localDate.atStartOfDay(ZoneOffset.UTC).toEpochSecond() / SECONDS_IN_HOUR;
     }
+
+
+    @Override
+    public Instant getInstant() {
+        return localDate.atStartOfDay(ZoneOffset.UTC).toInstant();
+    }
+
+
 }

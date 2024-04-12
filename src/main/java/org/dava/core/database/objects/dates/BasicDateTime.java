@@ -2,6 +2,7 @@ package org.dava.core.database.objects.dates;
 
 import org.dava.core.database.objects.exception.DavaException;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -73,5 +74,11 @@ public class BasicDateTime extends Date<LocalDateTime> {
     @Override
     public Long getHoursSinceEpoch() {
         return this.localDateTime.toEpochSecond(ZoneOffset.UTC) / SECONDS_IN_HOUR;
+    }
+
+
+    @Override
+    public Instant getInstant() {
+        return this.localDateTime.toInstant(ZoneOffset.UTC);
     }
 }

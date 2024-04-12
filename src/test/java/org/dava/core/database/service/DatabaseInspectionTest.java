@@ -1,9 +1,9 @@
 package org.dava.core.database.service;
 
-import org.dava.common.logger.Level;
-import org.dava.common.logger.Logger;
+import org.dava.api.Order;
+import org.dava.core.common.logger.Level;
+import org.dava.core.common.logger.Logger;
 import org.dava.core.database.objects.database.structure.*;
-import org.dava.external.Order;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

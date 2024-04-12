@@ -1,6 +1,6 @@
 package org.dava.core.systemtests;
 
-import org.dava.common.logger.Logger;
+import org.dava.core.common.logger.Logger;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.junit.jupiter.api.Test;
 

@@ -1,8 +1,10 @@
 package org.dava.core.database.service;
 
-import org.dava.common.Timer;
-import org.dava.common.logger.Level;
-import org.dava.common.logger.Logger;
+import org.dava.api.DavaTSID;
+import org.dava.api.Order;
+import org.dava.core.common.Timer;
+import org.dava.core.common.logger.Level;
+import org.dava.core.common.logger.Logger;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.OffsetDate;
 import org.dava.core.database.objects.exception.DavaException;
@@ -13,8 +15,6 @@ import org.dava.core.sql.objects.conditions.All;
 import org.dava.core.sql.objects.conditions.Before;
 import org.dava.core.sql.objects.conditions.Equals;
 import org.dava.core.sql.objects.logic.operators.And;
-import org.dava.external.DavaTSID;
-import org.dava.external.Order;
 import org.dava.core.database.service.BaseOperationService;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;

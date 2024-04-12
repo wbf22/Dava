@@ -72,4 +72,10 @@ public class ZonedDate extends Date<ZonedDateTime> {
     public Long getHoursSinceEpoch() {
         return this.zonedDateTime.toEpochSecond() / SECONDS_IN_HOUR;
     }
+
+
+    @Override
+    public Instant getInstant() {
+        return this.zonedDateTime.toInstant();
+    }
 }

@@ -1,6 +1,6 @@
 package org.dava.core.database.objects.database.structure;
 
-import org.dava.common.TypeUtil;
+import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
 
@@ -8,7 +8,7 @@ import java.math.BigDecimal;
 import java.util.*;
 import java.util.Map.Entry;
 
-import static org.dava.common.Checks.*;
+import static org.dava.core.common.Checks.*;
 import static org.dava.core.database.objects.exception.ExceptionType.CORRUPTED_ROW_ERROR;
 
 public class Row {

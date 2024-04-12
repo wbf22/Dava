@@ -15,6 +15,7 @@ public abstract class NumericCondition implements Condition {
     protected Predicate<BigDecimal> filter;
     protected Function<String, BigDecimal> fileNameConverter;
     protected boolean descending;
+    protected Class<?> columnType;
 
 
     @Override

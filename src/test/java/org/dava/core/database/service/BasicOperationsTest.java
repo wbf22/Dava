@@ -1,8 +1,11 @@
 package org.dava.core.database.service;
 
-import org.dava.common.StreamUtil;
-import org.dava.common.logger.Level;
-import org.dava.common.logger.Logger;
+import org.dava.api.DavaTSID;
+import org.dava.api.Order;
+import org.dava.core.common.StreamUtil;
+import org.dava.core.common.Timer;
+import org.dava.core.common.logger.Level;
+import org.dava.core.common.logger.Logger;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.dates.OffsetDate;
 import org.dava.core.database.service.fileaccess.FileUtil;
@@ -13,9 +16,6 @@ import org.dava.core.sql.objects.conditions.Equals;
 import org.dava.core.sql.objects.conditions.GreaterThan;
 import org.dava.core.sql.objects.conditions.LessThan;
 import org.dava.core.sql.objects.logic.operators.And;
-import org.dava.external.DavaTSID;
-import org.dava.external.Order;
-import org.dava.common.Timer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -25,8 +25,7 @@ import java.time.*;
 import java.util.*;
 import java.util.stream.IntStream;
 
-import static org.dava.common.Checks.safeCast;
-import static org.dava.common.StreamUtil.enumerate;
+import static org.dava.core.common.Checks.safeCast;
 import static org.junit.jupiter.api.Assertions.*;
 
 class BasicOperationsTest {
@@ -187,7 +186,7 @@ class BasicOperationsTest {
         Table<?> table = database.getTableByName("Order");
 
         long offset = 5L;
-        OffsetDate date = OffsetDate.of(OffsetDateTime.now().minusYears(1).toString());
+        OffsetDate date = OffsetDate.of(OffsetDateTime.now().minusYears(3).toString());
 
         Timer timer = Timer.start();
         After<OffsetDate> after = new After<>(
@@ -389,7 +388,8 @@ class BasicOperationsTest {
         GreaterThan greaterThan = new GreaterThan(
             "total",
             value,
-            true
+            true,
+            null
         );
         List<Row> rows = greaterThan.retrieve(table, new ArrayList<>(), 10L, offset);
         timer.printRestart();
@@ -420,7 +420,8 @@ class BasicOperationsTest {
         LessThan lessThan = new LessThan(
                 "total",
                 value,
-                true
+                true,
+                null
         );
         List<Row> rows = lessThan.retrieve(table, new ArrayList<>(), 10L, offset);
         timer.printRestart();

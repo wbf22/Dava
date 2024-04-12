@@ -3,6 +3,7 @@ package org.dava.core.database.objects.dates;
 import org.dava.core.database.objects.exception.DavaException;
 
 import java.io.Serializable;
+import java.math.BigDecimal;
 import java.time.*;
 import java.util.Objects;
 
@@ -26,26 +27,27 @@ public abstract class Date<T> implements Comparable<Date<T>> {
 
     public abstract Long getHoursSinceEpoch();
 
+    public abstract Instant getInstant();
+
     public abstract LocalDate getDateWithoutTime();
 
 
 
 
-
-    public static Date<?> of(String stringValue, Class<?> type) {
+    public static Date<?> ofForDava(String stringValue, Class<?> davaDateType) {
         Exception error = null;
 
         try {
-            if (type == LocalDate.class) {
+            if (davaDateType == BasicDate.class) {
                 return BasicDate.of(stringValue);
             }
-            else if (type == LocalDateTime.class) {
+            else if (davaDateType == BasicDateTime.class) {
                 return BasicDateTime.of(stringValue);
             }
-            else if (type == OffsetDateTime.class) {
+            else if (davaDateType == OffsetDate.class) {
                 return OffsetDate.of(stringValue);
             }
-            else if (type == ZonedDateTime.class) {
+            else if (davaDateType == ZonedDate.class) {
                 return ZonedDate.of(stringValue);
             }
         } catch (RuntimeException e) {
@@ -54,28 +56,55 @@ public abstract class Date<T> implements Comparable<Date<T>> {
 
         throw new DavaException(
             DATE_PARSE_ERROR,
-            "Tried to parse date from bad string: '" + stringValue + "' or unsupported type: '" + type.getName() + "'",
+            "Tried to parse date from bad string: '" + stringValue + "' or unsupported type: '" + davaDateType.getName() + "'",
             error
         );
     }
 
-    public static Date<?> ofOrLocalDateOnFailure(String stringValue, Class<?> type) {
+    public static Date<?> of(String stringValue, Class<?> javaDateType) {
+        Exception error = null;
+
+        try {
+            if (javaDateType == LocalDate.class) {
+                return BasicDate.of(stringValue);
+            }
+            else if (javaDateType == LocalDateTime.class) {
+                return BasicDateTime.of(stringValue);
+            }
+            else if (javaDateType == OffsetDateTime.class) {
+                return OffsetDate.of(stringValue);
+            }
+            else if (javaDateType == ZonedDateTime.class) {
+                return ZonedDate.of(stringValue);
+            }
+        } catch (RuntimeException e) {
+            error = e;
+        }
+
+        throw new DavaException(
+            DATE_PARSE_ERROR,
+            "Tried to parse date from bad string: '" + stringValue + "' or unsupported type: '" + javaDateType.getName() + "'",
+            error
+        );
+    }
+
+    public static Date<?> ofOrLocalDateOnFailure(String stringValue, Class<?> javaDateType) {
         // TODO parsing Strings to Dates is actually a bit of a slow down. Consider parsing manually to see if its faster
         // run OperationServiceTest.repetitive_reads() with profile to see this
 
         Exception error = null;
 
         try {
-            if (type == LocalDate.class) {
+            if (javaDateType == LocalDate.class) {
                 return BasicDate.of(stringValue);
             }
-            else if (type == LocalDateTime.class) {
+            else if (javaDateType == LocalDateTime.class) {
                 return BasicDateTime.of(stringValue);
             }
-            else if (type == OffsetDateTime.class) {
+            else if (javaDateType == OffsetDateTime.class) {
                 return OffsetDate.of(stringValue);
             }
-            else if (type == ZonedDateTime.class) {
+            else if (javaDateType == ZonedDateTime.class) {
                 return ZonedDate.of(stringValue);
             }
         } catch (RuntimeException e) {
@@ -89,7 +118,7 @@ public abstract class Date<T> implements Comparable<Date<T>> {
 
         throw new DavaException(
             DATE_PARSE_ERROR,
-            "Tried to parse date from bad string: '" + stringValue + "' or unsupported type: '" + type.getName() + "'",
+            "Tried to parse date from bad string: '" + stringValue + "' or unsupported type: '" + javaDateType.getName() + "'",
             error
         );
     }
@@ -97,6 +126,19 @@ public abstract class Date<T> implements Comparable<Date<T>> {
     public static boolean isDateSupportedDateType(Class<?> type) {
         return type == BasicDate.class || type == LocalDateTime.class || type == OffsetDateTime.class || type == ZonedDateTime.class;
     }
+
+    /**
+     * Returns the milliseconds since the epoch with decimal precision (partial milliseconds)
+     * @return
+     */
+    public BigDecimal getMillisecondsSinceTheEpoch() {
+        Instant instant = getInstant();
+        BigDecimal seconds = BigDecimal.valueOf(instant.getEpochSecond());
+        BigDecimal nanoseconds = BigDecimal.valueOf(instant.getNano());
+        return seconds.multiply(BigDecimal.valueOf(1000)).add(nanoseconds.divide(BigDecimal.valueOf(1_000_000)));
+    }
+
+
 
 
 

@@ -1,6 +1,6 @@
 package org.dava.core.systemtests;
 
-import org.dava.common.Timer;
+import org.dava.core.common.Timer;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 import org.junit.jupiter.api.Test;

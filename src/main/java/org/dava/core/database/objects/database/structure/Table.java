@@ -1,15 +1,15 @@
 package org.dava.core.database.objects.database.structure;
 
 
-import org.dava.common.TypeUtil;
+import org.dava.api.annotations.PrimaryKey;
+import org.dava.api.annotations.constraints.Unique;
+import org.dava.api.annotations.indices.Indexed;
+import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.objects.EmptiesPackage;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
-import org.dava.external.annotations.PrimaryKey;
-import org.dava.external.annotations.constraints.Unique;
-import org.dava.external.annotations.indices.Indexed;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,8 +38,8 @@ public class Table<T> {
     public Table(Class<T> tableClass, String databaseRoot, Mode mode, long seed) {
         FileUtil.invalidateCache();  // making sure cache hasn't cached anything from file with the same names
 
-        org.dava.external.annotations.Table annotation = Optional.ofNullable(
-            tableClass.getAnnotation( org.dava.external.annotations.Table.class )
+        org.dava.api.annotations.Table annotation = Optional.ofNullable(
+            tableClass.getAnnotation( org.dava.api.annotations.Table.class )
         ).orElseThrow(
             () -> makeTableParseError("Table class missing @Table annotation: " + tableClass.getName())
         );
@@ -57,7 +57,7 @@ public class Table<T> {
         // build table schema
         columns = new LinkedHashMap<>();
         for (Field field : tableClass.getDeclaredFields()) {
-            org.dava.external.annotations.Column columnAnn = field.getAnnotation( org.dava.external.annotations.Column.class );
+            org.dava.api.annotations.Column columnAnn = field.getAnnotation( org.dava.api.annotations.Column.class );
             String name = (columnAnn == null)? field.getName() : columnAnn.name();
 
             Unique unique = field.getAnnotation( Unique.class );
@@ -74,7 +74,7 @@ public class Table<T> {
             );
 
             // make numeric index count files
-            if ( isIndexed && TypeUtil.isNumericClass(field.getType()) ) {
+            if ( isIndexed && Index.isNumericallyIndexed(field.getType()) ) {
                 partitions.forEach( partition -> {
                     String indexPath = Index.buildColumnPath(databaseRoot, tableName, partition, name);
                     try {

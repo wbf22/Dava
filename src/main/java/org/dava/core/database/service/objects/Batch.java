@@ -1,6 +1,6 @@
 package org.dava.core.database.service.objects;
 
-import org.dava.common.ArrayUtil;
+import org.dava.core.common.ArrayUtil;
 import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.BaseOperationService;

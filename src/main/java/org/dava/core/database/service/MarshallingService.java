@@ -1,18 +1,18 @@
 package org.dava.core.database.service;
 
-import org.dava.common.TypeUtil;
+import org.dava.api.annotations.Column;
+import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.database.structure.Database;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.objects.database.structure.Row;
 import org.dava.core.sql.objects.Select;
-import org.dava.external.annotations.Column;
 
 import java.lang.reflect.*;
 import java.time.temporal.Temporal;
 import java.util.*;
 
-import static org.dava.common.Checks.mapIfNotNull;
-import static org.dava.common.TypeUtil.isBasicJavaType;
+import static org.dava.core.common.Checks.mapIfNotNull;
+import static org.dava.core.common.TypeUtil.isBasicJavaType;
 import static org.dava.core.database.objects.exception.ExceptionType.*;
 
 
@@ -40,8 +40,8 @@ public class MarshallingService {
      * @param <T> row type
      */
     public static <T> List<Row> parseRow(T row) {
-        org.dava.external.annotations.Table annotation = Optional.ofNullable(
-            row.getClass().getAnnotation( org.dava.external.annotations.Table.class )
+        org.dava.api.annotations.Table annotation = Optional.ofNullable(
+            row.getClass().getAnnotation( org.dava.api.annotations.Table.class )
         ).orElseThrow(
             () -> new DavaException(NOT_A_TABLE, "Class missing @Table annotation: " + row.getClass().getName() + NOT_A_TABLE_MSG, null)
         );
@@ -113,12 +113,6 @@ public class MarshallingService {
     }
 
 
-    public static List<Row> executeSelect(Select select, Database database) {
-
-
-
-        return null;
-    }
 
 
 
