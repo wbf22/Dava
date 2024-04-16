@@ -3,9 +3,9 @@ package org.dava.core.sql.objects.conditions;
 import java.math.BigDecimal;
 
 import org.dava.core.common.TypeUtil;
-import org.dava.core.database.objects.database.structure.Row;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.service.BaseOperationService;
+import org.dava.core.database.service.structure.Row;
 
 public class GreaterThan extends NumericCondition {
 

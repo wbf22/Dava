@@ -1,4 +1,4 @@
-package org.dava.core.database.objects.database.structure;
+package org.dava.core.database.service.structure;
 
 /**
  * Mode for table optimization. Organized by

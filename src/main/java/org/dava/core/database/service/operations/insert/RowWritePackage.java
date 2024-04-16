@@ -1,8 +1,8 @@
-package org.dava.core.database.service.objects.insert;
+package org.dava.core.database.service.operations.insert;
 
-import org.dava.core.database.objects.database.structure.Route;
-import org.dava.core.database.objects.database.structure.Row;
-import org.dava.core.database.service.objects.WritePackage;
+import org.dava.core.database.service.operations.WritePackage;
+import org.dava.core.database.service.structure.Route;
+import org.dava.core.database.service.structure.Row;
 
 public class RowWritePackage extends WritePackage {
 

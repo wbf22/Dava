@@ -1,9 +1,9 @@
-package org.dava.core.database.service.objects.delete;
-
-import org.dava.core.database.objects.database.structure.Route;
+package org.dava.core.database.service.operations.delete;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import org.dava.core.database.service.structure.Route;
 
 public class IndexDelete {
     private List<Long> indicesToDelete;

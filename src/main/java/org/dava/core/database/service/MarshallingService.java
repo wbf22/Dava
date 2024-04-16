@@ -2,16 +2,19 @@ package org.dava.core.database.service;
 
 import org.dava.api.annotations.Column;
 import org.dava.core.common.TypeUtil;
-import org.dava.core.database.objects.database.structure.Database;
 import org.dava.core.database.objects.exception.DavaException;
-import org.dava.core.database.objects.database.structure.Row;
+import org.dava.core.database.objects.exception.ExceptionType;
+import org.dava.core.database.service.structure.Database;
+import org.dava.core.database.service.structure.Row;
 import org.dava.core.sql.objects.Select;
 
 import java.lang.reflect.*;
 import java.time.temporal.Temporal;
 import java.util.*;
+import java.util.Map.Entry;
 
 import static org.dava.core.common.Checks.mapIfNotNull;
+import static org.dava.core.common.Checks.safeCast;
 import static org.dava.core.common.TypeUtil.isBasicJavaType;
 import static org.dava.core.database.objects.exception.ExceptionType.*;
 
@@ -114,6 +117,29 @@ public class MarshallingService {
 
 
 
+    public static <T> T parseObject(Row row, Class<T> tableClass) {
+        
+        
+
+        T object;
+        try {
+            Constructor<?> defaultConstructor = tableClass.getDeclaredConstructor();
+            object = safeCast(defaultConstructor.newInstance(), tableClass);
+        } catch (NoSuchMethodException | SecurityException | InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
+            throw new DavaException(ExceptionType.TABLE_PARSE_ERROR, "Couldn't find or call no args constructor on your table: " + tableClass.getName(), e);
+        }
+        
+        
+        for (Field field : tableClass.getFields()) {
+            
+            
+        
+        }
+
+
+        return object;
+
+    }
 
 
 

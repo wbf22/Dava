@@ -1,4 +1,4 @@
-package org.dava.core.database.objects.database.structure;
+package org.dava.core.database.service.structure;
 
 import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.dates.Date;

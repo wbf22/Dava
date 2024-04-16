@@ -1,4 +1,4 @@
-package org.dava.core.database.service.objects.delete;
+package org.dava.core.database.service.operations.delete;
 
 public class CountChange {
     private long oldCount;

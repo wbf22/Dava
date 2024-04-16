@@ -1,4 +1,4 @@
-package org.dava.core.database.service.objects;
+package org.dava.core.database.service.operations;
 
 public class WritePackage {
 

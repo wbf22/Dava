@@ -1,4 +1,4 @@
-package org.dava.core.database.objects.database.structure;
+package org.dava.core.database.service.structure;
 
 public class Column<T> {
     private final String name;

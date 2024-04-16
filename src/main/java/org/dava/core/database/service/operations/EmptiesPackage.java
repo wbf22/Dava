@@ -1,13 +1,13 @@
-package org.dava.core.database.service.objects;
-
-import org.dava.core.database.objects.database.structure.Empty;
-import org.dava.core.database.objects.database.structure.Route;
+package org.dava.core.database.service.operations;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import org.dava.core.database.service.structure.Empty;
+import org.dava.core.database.service.structure.Route;
 
 public class EmptiesPackage {
 

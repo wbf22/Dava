@@ -4,7 +4,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
-import org.dava.api.Repository;
 import org.dava.api.annotations.Query;
 import org.dava.core.database.objects.database.structure.Database;
 
@@ -12,7 +11,7 @@ public class OrderRepository extends Repository<Order, String> {
 
 
 
-    public OrderRepository(Database database) {
+    public OrderRepository(Database database, ) {
         super(database);
     }
 
@@ -26,8 +25,10 @@ public class OrderRepository extends Repository<Order, String> {
         return query(params);
     }
 
+
+
     public List<Order> getOrdersByTime(LocalDateTime localDateTime) {
-        return findByColumn("time");
+        return findByColumn("time", localDateTime.toString());
     } 
 
 }

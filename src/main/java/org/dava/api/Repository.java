@@ -1,8 +1,10 @@
 package org.dava.api;
 
 import org.dava.api.annotations.Query;
-import org.dava.core.database.objects.database.structure.Database;
 import org.dava.core.database.objects.exception.DavaException;
+import org.dava.core.database.service.structure.Database;
+import org.dava.core.database.service.structure.Row;
+import org.dava.core.database.service.structure.Table;
 import org.dava.core.sql.objects.conditions.Equals;
 
 import java.lang.reflect.Method;
@@ -11,17 +13,21 @@ import java.util.Map;
 
 import javax.xml.crypto.Data;
 
+import static org.dava.core.common.Checks.safeCastParameterized;
 import static org.dava.core.database.objects.exception.ExceptionType.REPOSITORY_ERROR;
 
 
 public class Repository<T, ID> {
 
     private Database database;
+    private Table<T> table;
 
 
 
     public Repository (Database database){
         this.database = database;
+        String tableName = this.getClass().getTypeParameters()[0].getClass().getName();
+        this.table = safeCastParameterized(database.getTableByName(tableName), Table.class);
     }
 
 
@@ -30,11 +36,14 @@ public class Repository<T, ID> {
         return null;
     }
 
-    public List<T> findByColumn(String columnName) {
+    public List<T> findByColumn(String columnName, String value) {
         
-        Equals equals = new Equals(columnName, columnName)
+        Equals equals = new Equals(columnName, value);
         
-        return ;
+        List<Row> rows = equals.retrieve(table, List.of(), null, null);
+        
+
+        return null;
     }
 
 

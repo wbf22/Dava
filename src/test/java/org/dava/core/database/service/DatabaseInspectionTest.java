@@ -3,7 +3,7 @@ package org.dava.core.database.service;
 import org.dava.api.Order;
 import org.dava.core.common.logger.Level;
 import org.dava.core.common.logger.Logger;
-import org.dava.core.database.objects.database.structure.*;
+import org.dava.core.database.service.structure.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

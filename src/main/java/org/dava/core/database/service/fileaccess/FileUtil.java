@@ -1,6 +1,6 @@
 package org.dava.core.database.service.fileaccess;
 
-import org.dava.core.database.service.objects.WritePackage;
+import org.dava.core.database.service.operations.WritePackage;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
 import java.io.*;

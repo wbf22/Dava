@@ -1,4 +1,4 @@
-package org.dava.core.database.objects.database.structure;
+package org.dava.core.database.service.structure;
 
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
@@ -19,6 +19,15 @@ public class Database {
 
     private Map<String, Table<?>> tables;
 
+
+    public Database(String rootDirectory, List<Class<?>> tableClasses, List<Mode> tableModes) {
+        FileUtil.invalidateCache(); // if you make a database on resources that already exist and have been cached, the cache won't function properly
+
+        this.rootDirectory = rootDirectory;
+        this.tables = IntStream.range(0, tableClasses.size())
+            .mapToObj(i -> new Table<>(tableClasses.get(i), rootDirectory, tableModes.get(i), 0L))
+            .collect(Collectors.toMap(Table::getTableName, obj -> obj));
+    }
 
     public Database(String rootDirectory, List<Class<?>> tableClasses, List<Mode> tableModes, long seed) {
         FileUtil.invalidateCache(); // if you make a database on resources that already exist and have been cached, the cache won't function properly

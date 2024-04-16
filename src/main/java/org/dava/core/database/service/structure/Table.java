@@ -1,4 +1,4 @@
-package org.dava.core.database.objects.database.structure;
+package org.dava.core.database.service.structure;
 
 
 import org.dava.api.annotations.PrimaryKey;
@@ -8,7 +8,7 @@ import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.fileaccess.FileUtil;
-import org.dava.core.database.service.objects.EmptiesPackage;
+import org.dava.core.database.service.operations.EmptiesPackage;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
 import java.io.File;
@@ -24,6 +24,7 @@ import static org.dava.core.database.objects.exception.ExceptionType.TABLE_PARSE
 
 public class Table<T> {
 
+    private final Class<T> tableClass;
     private LinkedHashMap<String, Column<?>> columns;
     private final String tableName;
     private final String directory;
@@ -38,6 +39,7 @@ public class Table<T> {
     public Table(Class<T> tableClass, String databaseRoot, Mode mode, long seed) {
         FileUtil.invalidateCache();  // making sure cache hasn't cached anything from file with the same names
 
+        this.tableClass = tableClass;
         org.dava.api.annotations.Table annotation = Optional.ofNullable(
             tableClass.getAnnotation( org.dava.api.annotations.Table.class )
         ).orElseThrow(
@@ -328,4 +330,9 @@ public class Table<T> {
     public String getDatabaseRoot() {
         return databaseRoot;
     }
+
+    public Class<T> getTableClass() {
+        return tableClass;
+    }
+
 }

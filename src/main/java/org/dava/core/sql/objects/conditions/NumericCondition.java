@@ -1,7 +1,8 @@
 package org.dava.core.sql.objects.conditions;
 
-import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.service.BaseOperationService;
+import org.dava.core.database.service.structure.*;
+
 import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;

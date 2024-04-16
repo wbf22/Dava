@@ -1,8 +1,8 @@
 package org.dava.core.sql.objects.logic.operators;
 
-import org.dava.core.database.objects.database.structure.Database;
-import org.dava.core.database.objects.database.structure.Row;
-import org.dava.core.database.objects.database.structure.Table;
+import org.dava.core.database.service.structure.Database;
+import org.dava.core.database.service.structure.Row;
+import org.dava.core.database.service.structure.Table;
 import org.dava.core.sql.objects.conditions.Condition;
 
 import java.util.List;

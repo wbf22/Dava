@@ -1,4 +1,4 @@
-package org.dava.core.database.objects.database.structure;
+package org.dava.core.database.service.structure;
 
 import org.dava.core.common.HashUtil;
 import org.dava.core.common.TypeUtil;

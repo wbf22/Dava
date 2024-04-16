@@ -1,15 +1,14 @@
-package org.dava.core.database.service;
+package org.dava.core.database.service.operations;
 
 import org.dava.core.common.ArrayUtil;
 import org.dava.core.common.Bundle;
 import org.dava.core.common.TypeUtil;
-import org.dava.core.database.objects.database.structure.*;
 import org.dava.core.database.objects.exception.DavaException;
+import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.fileaccess.FileUtil;
-import org.dava.core.database.service.objects.Batch;
-import org.dava.core.database.service.objects.WritePackage;
-import org.dava.core.database.service.objects.delete.CountChange;
-import org.dava.core.database.service.objects.delete.IndexDelete;
+import org.dava.core.database.service.operations.delete.CountChange;
+import org.dava.core.database.service.operations.delete.IndexDelete;
+import org.dava.core.database.service.structure.*;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

@@ -1,11 +1,11 @@
 package org.dava.core.sql.objects.conditions;
 
 
-import org.dava.core.database.objects.database.structure.Column;
-import org.dava.core.database.objects.database.structure.Database;
-import org.dava.core.database.objects.database.structure.Row;
-import org.dava.core.database.objects.database.structure.Table;
 import org.dava.core.database.service.BaseOperationService;
+import org.dava.core.database.service.structure.Column;
+import org.dava.core.database.service.structure.Database;
+import org.dava.core.database.service.structure.Row;
+import org.dava.core.database.service.structure.Table;
 
 import java.util.ArrayList;
 import java.util.List;
