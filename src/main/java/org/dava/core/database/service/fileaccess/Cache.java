@@ -17,18 +17,16 @@ public class Cache {
 
 
     /**
-     * <pre>
+     * 
      * Calls the 'resourceCall' lambda (supplier) if 'resourceName' 'operationHash' isn't in
      * the cache. Then caches the result.
      *
-     * For example, say you access a certain file's contents. You could provide the filepath
+     * <p> For example, say you access a certain file's contents. You could provide the filepath
      * as the 'resourceName', and some hash representing the specifics of the way you read this
      * file (say for this example you read the first line of the file) for the 'operationHash'.
      * Then for the 'resourceCall' you'd provide a lambda of you calling the function that reads
      * your file.
      *
-     *
-     * </pre>
      *
      * @param resourceName name for this resource in the cache. You'll use this when you call 'write'
      *                     to invalidate the cache for this resource
@@ -41,21 +39,25 @@ public class Cache {
      */
     public <T, E extends Exception> T get(String resourceName, String operationHash, CheckedSupplier<T, E> resourceCall) throws E {
 
-        if (pathCache.containsKey(resourceName)) {
-            Map<String, Object> resource = pathCache.get(resourceName);
-            if (resource.containsKey(operationHash))
-                return (T) resource.get(operationHash);
+        // check if in cache
+        Map<String, Object> resource = pathCache.get(resourceName);
+        if (resource != null) {
+            T storedResult = (T) resource.get(operationHash);
+            if (storedResult != null)
+                return storedResult;
         }
 
+        // call the provided lambda if no entry was in the cache
         T result = resourceCall.get();
 
-        if (pathCache.containsKey(resourceName)) {
-            pathCache.get(resourceName).put(operationHash, result);
+        // make a resource if needed, and put the value in the resource
+        if (resource != null) {
+            resource.put(operationHash, result);
             // handle cache getting too big
             if (pathCache.get(resourceName).size() > MAX_RESOURCE_SIZE) invalidate(resourceName);
         }
         else {
-            Map<String, Object> resourceMap = new HashMap<>();
+            Map<String, Object> resourceMap = new ConcurrentHashMap<>();
             resourceMap.put(operationHash, result);
             pathCache.put(resourceName, resourceMap);
         }

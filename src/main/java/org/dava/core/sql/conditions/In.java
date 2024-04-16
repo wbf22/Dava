@@ -1,41 +1,61 @@
 package org.dava.core.sql.conditions;
 
 import java.util.List;
+import java.util.Set;
 
+import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.structure.Database;
 import org.dava.core.database.service.structure.Row;
 import org.dava.core.database.service.structure.Table;
 
-public class In<T> implements Condition {
+public class In implements Condition {
 
-    private List<T> collection;
-    private T value;
+    private Set<String> values;
+    private String columnName;
 
-    public In(List<T> collection, T value) {
-        this.collection = collection;
-        this.value = value;
-    }
-
-    public static <S> In<S> in(List<S> collection, S value) {
-        return new In<>(collection, value);
+    public In(Set<String> values, String columnName) {
+        this.values = values;
+        this.columnName = columnName;
     }
 
     @Override
     public boolean filter(Row row) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'filter'");
+        return values.contains(row.getValue(columnName));
     }
 
     @Override
-    public List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Long limit, Long offset) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'retrieve'");
+    public List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Integer limit, Long offset) {
+        return retrieve(
+            table,
+            parentFilters,
+            columnName,
+            () -> BaseOperationService.getRowsWithValueInCollection(
+                table,
+                columnName,
+                values,
+                0L,
+                null,
+                true
+            ).stream(),
+            (startRow, rowsPerIteration) -> BaseOperationService.getRowsWithValueInCollection(
+                table,
+                columnName,
+                values,
+                startRow,
+                startRow + rowsPerIteration,
+                false
+            ),
+            limit,
+            offset
+        );
     }
 
     @Override
     public Long getCountEstimate(Table<?> table) {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getCountEstimate'");
+        /* 
+            Punting on this one. It's unlikely this would be the most limiting condition.
+        */ 
+        return Long.MAX_VALUE;
     }
 
 

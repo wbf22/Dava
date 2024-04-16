@@ -12,5 +12,6 @@ public enum ExceptionType {
     NOT_A_TABLE,
     MISSING_TABLE,
     REPOSITORY_ERROR,
-    BASE_IO_ERROR;
+    BASE_IO_ERROR,
+    LIMIT_ERROR;
 }

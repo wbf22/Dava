@@ -148,7 +148,7 @@ public class Delete {
             .map( row -> Row.serialize(table, row.getColumnsToValues()) )
             .toList();
 
-        String rows = BaseOperationService.getAllRows(
+        String rows = BaseOperationService.getAllRowsInTablePartitionWithoutIndicies(
             table,
             partition
         ).stream()

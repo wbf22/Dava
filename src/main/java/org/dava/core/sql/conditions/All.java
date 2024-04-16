@@ -13,13 +13,13 @@ public class All implements Condition {
     }
 
     @Override
-    public List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Long limit, Long offset) {
-        return getRowsLimited(
+    public List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Integer limit, Long offset) {
+        return getLimitedRowsEfficiently(
             table,
             parentFilters,
             limit,
             offset,
-            (startRow, endRow) -> BaseOperationService.getRowsFromTable(
+            (startRow, endRow) -> BaseOperationService.getRowsFromTableWithoutIndices(
                 table,
                 startRow,
                 endRow

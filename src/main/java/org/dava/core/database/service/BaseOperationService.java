@@ -40,8 +40,10 @@ public class BaseOperationService {
 
 
 
-    /*
-        Indices
+    /**
+     * Adds values to an index. Also handles numeric count file updates.
+     * 
+     * <p> Does not handle numeric repartitions. That's done in the Insert class as of 4/16/2024
      */
     public static void addToIndex(String folderPath, Object value, List<IndexWritePackage> indexWritePackages, boolean isUnique) {
         try {
@@ -106,7 +108,7 @@ public class BaseOperationService {
         else {
             return table.getPartitions().parallelStream()
                 .flatMap(partition ->
-                    getAllLinesWithoutRoutes(
+                    getRowsFromTablePartitionWithoutIndicies(
                         table,
                         partition,
                         row -> row.getValue(columnName).toString().equals(value),
@@ -119,6 +121,9 @@ public class BaseOperationService {
 
     }
 
+    /**
+     * Get's rows in an index limited
+     */
     private static Stream<Row> getRowsFromIndex(String indexPath, Table<?> table, String partition, long startRow, Long endRow) {
         List<Route> routes = getFileSizeAndRoutes(
             indexPath,
@@ -133,23 +138,93 @@ public class BaseOperationService {
             .mapToObj(i -> new Row(lines.get(i), table, routes.get(i)));
     }
 
-    public static List<Row> getRowsFromTable(Table<?> table, long startRow, Long endRow) {
+
+    /**
+     * Get's rows that match the values in 'values'. Also is limited. Uses indices if possible
+     */
+    public static List<Row> getRowsWithValueInCollection(Table<?> table, String columnName, Set<String> values, Long startRow, Long endRow, boolean allRows) {
+    
+
+        Column<?> column = table.getColumn(columnName);
+        if (column.isIndexed() && !allRows) {
+            return table.getPartitions().parallelStream()
+                .flatMap(partition -> {
+                    List<String> indexPaths = values.stream()
+                        .map(value ->
+                            Index.buildIndexPath(
+                                table,
+                                partition,
+                                columnName,
+                                value
+                            )
+                        )
+                        .toList();
+
+                    return getRowsFromMultipleIndices(indexPaths, table, partition, startRow, endRow);
+                })
+                .toList();
+        }
+        else {
+            return table.getPartitions().parallelStream()
+                .flatMap(partition ->
+                    getRowsFromTablePartitionWithoutIndicies(
+                        table,
+                        partition,
+                        row -> values.contains(row.getValue(columnName).toString()),
+                        startRow,
+                        endRow
+                    )
+                )
+                .toList();
+        }
+
+    }
+
+    /**
+     * Get's rows that match the values in 'values'. Uses indices if possible
+     */
+    private static Stream<Row> getRowsFromMultipleIndices(List<String> indexPaths, Table<?> table, String partition, long startRow, Long endRow) {
+
+        List<Route> routes = indexPaths.parallelStream()
+            .flatMap( indexPath -> {
+                return getFileSizeAndRoutes(
+                    indexPath,
+                    partition,
+                    startRow * 10,
+                    (endRow == null)? null : (int) (endRow - startRow) * 10
+                ).getSecond().stream();
+            })
+            .distinct() // no duplicates, see Route class for equals method
+            .toList();
+
+        List<String> lines = getLinesUsingRoutes(partition, table, routes);
+
+        return IntStream.range(0, lines.size())
+            .mapToObj(i -> new Row(lines.get(i), table, routes.get(i)));
+    }
+
+    /**
+     * Get's rows in the table. limited. Doesn't use indices
+     */
+    public static List<Row> getRowsFromTableWithoutIndices(Table<?> table, long startRow, Long endRow) {
 
         return table.getPartitions().parallelStream()
             .flatMap(partition ->
-                         getAllLinesWithoutRoutes(
-                             table,
-                             partition,
-                             row -> true,
-                             startRow,
-                             endRow
-                         )
+                getRowsFromTablePartitionWithoutIndicies(
+                    table,
+                    partition,
+                    row -> true,
+                    startRow,
+                    endRow
+                )
             )
             .toList();
     }
 
-
-    private static Stream<Row> getAllLinesWithoutRoutes(Table<?> table, String partition, Predicate<Row> filter, long startRow, Long endRow) {
+    /**
+     * Get's rows in the table by partition, using the start and end row values. Doesn't use indices
+     */
+    private static Stream<Row> getRowsFromTablePartitionWithoutIndicies(Table<?> table, String partition, Predicate<Row> filter, long startRow, Long endRow) {
         try {
             int end = (endRow == null)? Integer.MAX_VALUE : Math.toIntExact(endRow);
             byte[] bytes = FileUtil.readBytes(
@@ -203,91 +278,8 @@ public class BaseOperationService {
     }
 
     /**
-     * Get's rows by date from both partitions
+     * Get's lines comparing with a numeric date. (Either greater than or less than). Uses indices if possible
      */
-    public static Stream<Row> getAllComparingDate(
-            Table<?> table,
-            String columnName,
-            BiPredicate<Integer, Integer> compareYearsFolderYearDateYear,
-            BiPredicate<Date<?>, Date<?>> compareDatesRowYearDateYear,
-            Date<?> date,
-            boolean descending
-    ) {
-        int year = date.getYear();
-        Column<?> column = table.getColumn(columnName);
-
-        Comparator<Row> comparator = Comparator.comparing(
-            row -> safeCast(row.getValue(columnName), Date.class)
-        );
-        comparator = (descending)? comparator.reversed() : comparator;
-
-        if (!column.isIndexed()) {
-            return table.getPartitions().parallelStream()
-                .flatMap(partition ->
-                    getAllLinesWithoutRoutes(
-                        table,
-                        partition,
-                        (Row row) -> compareDatesRowYearDateYear.test(
-                            safeCast(row.getValue(columnName), Date.class),
-                            date
-                        ),
-                        0,
-                        null
-                    )
-                )
-                .sorted(comparator);
-        }
-
-        return table.getPartitions().parallelStream()
-            .flatMap(partition -> {
-                String path = Index.buildColumnPath(table.getDatabaseRoot(), table.getTableName(), partition, columnName);
-                File[] yearFolders = FileUtil.listFiles(path);
-
-                List<Row> rows = new ArrayList<>();
-                for (File yearFolder : yearFolders) {
-                    int folderYear = Integer.parseInt(yearFolder.getName());
-                    if (compareYearsFolderYearDateYear.test(folderYear, year)) {
-                        rows.addAll(
-                            Arrays.stream(FileUtil.listFiles(
-                                Index.buildIndexYearFolderForDate(table, partition, columnName, Integer.toString(folderYear))
-                            ))
-                            .flatMap( indexFile -> getRowsFromTable( table, columnName, indexFile.getName().split("\\.")[0], 0, null ).stream() )
-                            .toList()
-                        );
-                    }
-                    else if (folderYear == year) {
-                        rows.addAll(
-                            Arrays.stream(FileUtil.listFiles(
-                                Index.buildIndexYearFolderForDate(table, partition, columnName, Integer.toString(folderYear))
-                            ))
-                            .flatMap( localDateIndexFile -> {
-                                Date<?> indexLocateDate = Date.ofOrLocalDateOnFailure(localDateIndexFile.getName().split("\\.")[0], column.getType());
-
-                                if ( compareDatesRowYearDateYear.test(indexLocateDate, date) ) {
-                                    return getRowsFromTable( table, columnName, indexLocateDate.toString(), 0, null ).stream();
-                                }
-                                else if (indexLocateDate.equals(date.getDateWithoutTime())) {
-                                    return getRowsFromTable( table, columnName, indexLocateDate.toString(), 0, null ).stream()
-                                            .filter( row -> {
-                                                Date<?> rowDate = safeCast(row.getValue(columnName), Date.class);
-                                                return compareDatesRowYearDateYear.test(rowDate, date);
-                                            });
-                                }
-                                return new ArrayList<Row>().stream();
-                            } )
-                            .toList()
-                        );
-                    }
-                }
-
-                return rows.stream();
-            })
-            .sorted(comparator);
-    }
-
-    // TODO consider making a separate service for dates, or maybe just chopping up these methods
-
-
     public static List<Row> getRowsComparingNumeric(
         Table<?> table,
         String columnName,
@@ -441,7 +433,7 @@ public class BaseOperationService {
             return rows.subList(extra, size.intValue());
         }
         else {
-            List<Row> rows = getRowsFromTable(table, 0, null).stream()
+            List<Row> rows = getRowsFromTableWithoutIndices(table, 0, null).stream()
                 .filter(filterRows)
                 .collect(Collectors.toList());
             
@@ -452,6 +444,23 @@ public class BaseOperationService {
             return rows.subList(startRow.intValue(), size.intValue());
         }
     }
+
+    /**
+     * Get's all rows in the table from a partition. Doesn't use indices
+     */
+    public static List<Row> getAllRowsInTablePartitionWithoutIndicies(Table<?> table, String partition) {
+        return getRowsFromTablePartitionWithoutIndicies(
+            table,
+            partition,
+            row -> true,
+            0,
+            null
+        )
+        .toList();
+    }
+
+
+
 
     /**
      * Converts a file name to big decimal. Only used for numeric queries really. 
@@ -497,34 +506,6 @@ public class BaseOperationService {
             .sorted(
                 descending ? Comparator.reverseOrder() : Comparator.naturalOrder()
             );
-    }
-
-    public static List<Row> getAllRows(Table<?> table, String partition) {
-        return getAllLinesWithoutRoutes(
-            table,
-            partition,
-            row -> true,
-            0,
-            null
-        )
-        .toList();
-    }
-
-    public static List<Integer> getYearDateFolders(Table<?> table, String columnName, Date<?> date, BiPredicate<Integer, Integer> compareYearsFolderYearDateYear, boolean descending) {
-        return table.getPartitions().parallelStream()
-            .flatMap(partition -> {
-                String columnPath = Index.buildColumnPath(table.getDatabaseRoot(), table.getTableName(), partition, columnName);
-                return Arrays.stream(FileUtil.listFiles(columnPath))
-                    .map(yearFolder -> Integer.parseInt(yearFolder.getName().split("\\.")[0]))
-                    .filter(fYear -> compareYearsFolderYearDateYear.test(fYear, date.getYear()))
-                    .sorted(
-                        descending ? Comparator.reverseOrder() : Comparator.naturalOrder()
-                    );
-            })
-            .sorted(
-                descending ? Comparator.reverseOrder() : Comparator.naturalOrder()
-            )
-            .toList();
     }
 
     public static List<Long> getNumericFolders(String columnPath, Long point, BiPredicate<Long, Long> compareValues, boolean descending) {

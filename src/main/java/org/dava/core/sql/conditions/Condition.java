@@ -1,6 +1,8 @@
 package org.dava.core.sql.conditions;
 
 
+import org.dava.core.database.objects.exception.DavaException;
+import org.dava.core.database.objects.exception.ExceptionType;
 import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.structure.Column;
 import org.dava.core.database.service.structure.Database;
@@ -19,7 +21,7 @@ public interface Condition {
 
     boolean filter(Row row);
 
-    List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Long limit, Long offset);
+    List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Integer limit, Long offset);
 
     /**
      * Used for evaluating AND and OR conditions more efficiently. 
@@ -30,13 +32,28 @@ public interface Condition {
 
 
 
+    /**
+     * Gets rows using a special efficient method using the 'getRangeRows' lambda 
+     * if a limit and offset are provided, otherwise using 'getAllRows' method.
+     * (The 'getAllRows' method probably ought to use an index or something efficient
+     * if possible)
+     * 
+     * @param table
+     * @param parentFilters
+     * @param columnName
+     * @param getAllRows
+     * @param getRangeRows
+     * @param limit
+     * @param offset
+     * @return
+     */
     default List<Row> retrieve(
         Table<?> table,
         List<Condition> parentFilters,
         String columnName,
         Supplier<Stream<Row>> getAllRows,
         BiFunction<Long, Long, List<Row>> getRangeRows,
-        Long limit,
+        Integer limit,
         Long offset
     ) {
         List<Row> rows;
@@ -52,7 +69,7 @@ public interface Condition {
                 .toList();
         }
         else {
-            rows = getRowsLimited(
+            rows = getLimitedRowsEfficiently(
                 table,
                 parentFilters,
                 limit,
@@ -65,23 +82,20 @@ public interface Condition {
     }
 
 
-    default Stream<Row> getRows(
-        Table<?> table,
-        String columnName,
-        Object value,
-        List<Condition> parentFilters
-    ) {
-        return table.getPartitions().parallelStream()
-            .flatMap(partition ->
-                BaseOperationService.getRowsFromTable(table, columnName, value.toString(), 0, null).stream()
-                    .filter(row -> parentFilters.parallelStream().allMatch(condition -> condition.filter(row)))
-            );
-    }
 
     /**
-     * This method handles the logistics of a certain amount of rows at a certain offset.
+     * This method helps retrieve rows more efficiently
      * 
-     * The function provided actually gets the rows given a start and end index. 
+     * <p> The function provided actually gets the rows given a start and end index, but this
+     * method manages it to be more efficient.
+     * 
+     * <p> The way this works, is that typcially when you have a long list of filters in a query,
+     * you'll actually need to retrieve more rows than the original range provided. This method adjusts
+     * the amount of rows to retrieve based on the number of parent filters. This helps avoid doing multiple
+     * table reads while also balancing reading too much.
+     * 
+     * <p> It uses this equation to determine the number of rows to retrieve initially:
+     * <p> #rowToRetrieve = limit * (1.1 + .2 * #parentFilters) / #ofPartitions
      * 
      * @param table
      * @param parentFilters
@@ -90,10 +104,10 @@ public interface Condition {
      * @param functionToGetRows
      * @return
      */
-    default List<Row> getRowsLimited(
+    default List<Row> getLimitedRowsEfficiently(
             Table<?> table,
             List<Condition> parentFilters,
-            Long limit,
+            Integer limit,
             Long offset,
             BiFunction<Long, Long, List<Row>> functionToGetRows
     ) {
@@ -137,7 +151,24 @@ public interface Condition {
     }
 
 
-    default List<Row> limit(List<Row> rows, Long limit, long offset) {
+    /**
+     * This method limits the size of the returned rows given the long limit and offset values.
+     * 
+     * It's mostly here to reduce complexity to methods above, but it handles converting these
+     * limit and offset values to ints for the subList method.
+     * 
+     * Intesrtingly, java Lists can't have a size larger than an Integer so maybe we don't really need
+     * limit to be a Long. However, in very large tables an offset could be a long. I'm not sure anyone
+     * would have more records than max int, but you never know. But they won't be able to retrieve more
+     * than max int records at a time. 
+     * 
+     * 
+     * @param rows
+     * @param limit
+     * @param offset
+     * @return
+     */
+    default List<Row> limit(List<Row> rows, Integer limit, long offset) {
         if (limit != null) {
             if (rows.size() > limit + offset) {
                 return rows.subList(Math.toIntExact(offset), Math.toIntExact(limit));

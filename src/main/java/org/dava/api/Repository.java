@@ -22,6 +22,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.xml.crypto.Data;
 
@@ -71,12 +74,16 @@ public class Repository<T, ID> {
      */
     public T findAllById(List<ID> primaryKeys) {
 
-        In in = new In<>(null, null);
         String columnName = MarshallingService.getPrimaryKeyField(table.getTableClass()).getName();
+
+        In in = new In(
+            primaryKeys.stream()
+                .map(Objects::toString)
+                .collect(Collectors.toSet()), 
+            columnName
+        );
     
-        Equals equals = new Equals(columnName, primaryKey.toString());
-        
-        return equals.retrieve(table, List.of(), null, null).stream()
+        return in.retrieve(table, List.of(), null, null).stream()
             .map(row -> MarshallingService.parseObject(row, table.getTableClass()))
             .findFirst()
             .orElse(null);
@@ -290,28 +297,29 @@ public class Repository<T, ID> {
 
     }
 
-    private List<Row> getRowsOfAllSubObjects(List<Row> rows, Class<T> tableClass) {
-        List<Row> childRows = new ArrayList<>();
+    private Map<String, List<Row>> getRowsOfAllSubObjects(List<Row> rows, Class<?> tableClass) {
+        Map<String, List<Row>> childRows = new HashMap<>();
 
         for (Field field : tableClass.getFields()) {
             Class<?> fieldType = field.getType();
             if (fieldType.getAnnotation(org.dava.api.annotations.Table.class) != null) {
                 String primaryKeyFieldName = MarshallingService.getPrimaryKeyField(fieldType).getName();
 
-                List<Row> newRows = rows.parallelStream()
-                    .flatMap(row -> {
-                        String primaryKey = row.getValue(primaryKeyFieldName).toString();
+                Set<String> primaryKeys = rows.stream()
+                    .map(row -> row.getValue(primaryKeyFieldName).toString() )
+                    .collect(Collectors.toSet());
 
-                        Equals equals = new Equals(primaryKeyFieldName, primaryKey);
-                        return equals.retrieve(table, List.of(), null, null).stream();
-                    })
-                    .toList();
+                In in = new In(primaryKeys, primaryKeyFieldName);
+                List<Row> newRows = in.retrieve(table, null, null, null);
 
-                childRows.addAll(newRows);
+                // check all child rows to see if they have any children that are also in other tables
+                Map<String, List<Row>> childChildRows = getRowsOfAllSubObjects(newRows, fieldType);
+
+                // add all child rows to list
+                childRows.put(tableClass.getSimpleName(), rows);
             }
 
         }
-
 
         return childRows;
     }

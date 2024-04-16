@@ -9,6 +9,9 @@ import org.dava.core.sql.Select;
 
 public class SqlService {
 
+    // TODO if a 'limit' statement is included, make sure the value is less than Integer.MAX_VALUE.
+    // Also if a limit is ever applied in another part of Dava other than custom queries we'll also want
+    // to check the value there.
 
     public static Select parse(String query, Table<?> table) {
         // TODO Auto-generated method stub

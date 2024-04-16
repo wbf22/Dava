@@ -425,7 +425,7 @@ public class Batch {
                     .map(RowWritePackage::getRoute)
                     .toList();
 
-                List<Row> allRowsWithoutThoseToDelete = BaseOperationService.getAllRows(table, partition).stream()
+                List<Row> allRowsWithoutThoseToDelete = BaseOperationService.getAllRowsInTablePartitionWithoutIndicies(table, partition).stream()
                     .filter(row -> {
                         Route location = row.getLocationInTable();
                         // check if routesToDelete contains the row route

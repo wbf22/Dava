@@ -28,17 +28,16 @@ public class Equals implements Condition {
     }
 
     @Override
-    public List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Long limit, Long offset) {
+    public List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Integer limit, Long offset) {
         return retrieve(
             table,
             parentFilters,
             column,
-            () -> getRows(
-                table,
-                column,
-                value,
-                parentFilters
-            ),
+            () -> table.getPartitions().parallelStream()
+                .flatMap(partition ->
+                    BaseOperationService.getRowsFromTable(table, column, value, 0, null).stream()
+                        .filter(row -> parentFilters.parallelStream().allMatch(condition -> condition.filter(row)))
+                ),
             (startRow, rowsPerIteration) -> BaseOperationService.getRowsFromTable(
                 table,
                 column,
