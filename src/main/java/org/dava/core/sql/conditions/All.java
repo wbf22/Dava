@@ -6,7 +6,7 @@ import org.dava.core.database.service.structure.Table;
 
 import java.util.List;
 
-public class All implements Condition{
+public class All implements Condition {
     @Override
     public boolean filter(Row row) {
         return true;

@@ -258,4 +258,5 @@ public class Checks {
     public static <T> T condition(boolean condition, T ifTrue, T ifFalse) {
         return (condition)? ifTrue : ifFalse;
     }
+
 }

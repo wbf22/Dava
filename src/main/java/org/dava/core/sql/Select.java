@@ -3,7 +3,8 @@ package org.dava.core.sql;
 
 import java.util.List;
 
-import org.dava.core.sql.service.conditions.Condition;
+import org.dava.core.sql.conditions.Condition;
+
 
 public class Select {
 
@@ -16,6 +17,13 @@ public class Select {
         this.asNamesOfFields = asNamesOfFields;
         this.from = from;
         this.where = where;
+    }
+
+
+
+    public <T> List<T> retrieve() {
+
+        return null;
     }
 
 

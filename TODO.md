@@ -18,6 +18,7 @@
 - graph based database?
 - handle partitioning when table is too large
 - consider sorting dates like numeric values using timestamps
+- Add transactions. Pass a value in inserts or updates to tell database to append rollback strings instead of overwriting
 
 # ToTest
 - test every thing with multiple partitions

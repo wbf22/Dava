@@ -1,4 +1,4 @@
-package org.dava.core.sql.objects.logic.operators;
+package org.dava.core.sql.operators;
 
 import org.dava.core.database.service.structure.Database;
 import org.dava.core.database.service.structure.Row;

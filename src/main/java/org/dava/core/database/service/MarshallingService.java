@@ -1,6 +1,8 @@
 package org.dava.core.database.service;
 
 import org.dava.api.annotations.Column;
+import org.dava.api.annotations.PrimaryKey;
+import org.dava.api.annotations.Table;
 import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.objects.exception.ExceptionType;
@@ -8,6 +10,7 @@ import org.dava.core.database.service.structure.Database;
 import org.dava.core.database.service.structure.Row;
 import org.dava.core.sql.Select;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.*;
 import java.time.temporal.Temporal;
 import java.util.*;
@@ -42,8 +45,8 @@ public class MarshallingService {
      * @return a list of validated and parsed rows.
      * @param <T> row type
      */
-    public static <T> List<Row> parseRow(T row) {
-        org.dava.api.annotations.Table annotation = Optional.ofNullable(
+    public static <T> Map<String, List<Row>> parseRow(T row) {
+        Table annotation = Optional.ofNullable(
             row.getClass().getAnnotation( org.dava.api.annotations.Table.class )
         ).orElseThrow(
             () -> new DavaException(NOT_A_TABLE, "Class missing @Table annotation: " + row.getClass().getName() + NOT_A_TABLE_MSG, null)
@@ -61,28 +64,41 @@ public class MarshallingService {
          *   foreign key,
          *   check/custom,
          */
-        List<Row> parsedRows = new ArrayList<>();
+        Map<String, List<Row>> parsedRows = new HashMap<>();
         Map<String, Object> columnsToValues = new HashMap<>();
         for (Field field : row.getClass().getDeclaredFields()) {
             Column column = field.getAnnotation(Column.class);
             String columnName = mapIfNotNull(column, Column::name, "");
             columnName = (columnName.isEmpty())? field.getName() : columnName;
 
-            Object value = getFieldValueUsingGetter(row, field);
+            Object value = getFieldValue(row, field);
 
             if (TypeUtil.isBasicJavaType(value.getClass())) {
                 columnsToValues.put(columnName, value.toString());
             }
             else {
-                parsedRows.addAll(
-                    parseRow(value)
-                );
+
+                Map<String, List<Row>> otherTableRows = parseRow(value);
+                for (String key : otherTableRows.keySet()) {
+
+                    if (parsedRows.containsKey(key))
+                        parsedRows.get(key).addAll(otherTableRows.get(key));
+                    else 
+                        parsedRows.put(key, otherTableRows.get(key));
+
+                }
+
+                Object primaryKey = getPrimaryKeyOfObject(value);
+                columnsToValues.put(columnName, primaryKey);
             }
         }
 
         Row parsedRow = new Row(columnsToValues, tableName);
 
-        parsedRows.add(parsedRow);
+        if (parsedRows.containsKey(tableName))
+            parsedRows.get(tableName).add(parsedRow);
+        else 
+            parsedRows.put(tableName, new ArrayList<>(List.of(parsedRow)));
 
         // apply table constraints
         /*
@@ -93,6 +109,64 @@ public class MarshallingService {
         return parsedRows;
     }
 
+
+    private static Object getPrimaryKeyOfObject(Object value) {
+        Class<?> valueClass = value.getClass();
+
+        Field field = getPrimaryKeyField(valueClass);
+
+        boolean originalAccessibility = field.canAccess(value);
+        try {
+            field.setAccessible(true);
+
+            return field.get(value);
+
+        } catch (IllegalArgumentException | IllegalAccessException e) {
+            throw new DavaException(
+                ExceptionType.TABLE_PARSE_ERROR, 
+                "Failed trying to get primary key when saving child object. Class: " + valueClass.getName(), 
+                e
+            );
+        } finally {
+            // Restore the original accessibility status
+            field.setAccessible(originalAccessibility);
+        }
+    }
+
+    public static <T> Field getPrimaryKeyField(Class<T> tableClass) {
+        for (Field field : tableClass.getFields()) {
+            Annotation primaryKeyAnnotation = tableClass.getAnnotation(PrimaryKey.class);
+
+            if (primaryKeyAnnotation != null) 
+                return field;
+        }
+
+
+        throw new DavaException(
+            ExceptionType.TABLE_PARSE_ERROR, 
+            "Missing primary key annotation on table object. Failed when trying to save child object. Class: " + tableClass.getName(), 
+            null
+        );
+    }
+
+    public static <T> Object getFieldValue(T row, Field field) {
+        boolean originalAccessibility = field.canAccess(row);
+
+        try {
+            field.setAccessible(true);
+
+            return field.get(row);
+        } catch (IllegalArgumentException | IllegalAccessException e) {
+            throw new DavaException(
+                ExceptionType.TABLE_PARSE_ERROR, 
+                "Failed trying to get field for class: " + row.getClass().getName(), 
+                e
+            );
+        } finally {
+            // Restore the original accessibility status
+            field.setAccessible(originalAccessibility);
+        }
+    }
     
     private static <T> Object getFieldValueUsingGetter(T row, Field field) {
         String getterMethodName = "get" +
@@ -147,7 +221,6 @@ public class MarshallingService {
         
         return object;
     }
-
 
 
 
