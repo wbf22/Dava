@@ -1,8 +1,9 @@
-package org.dava.core.sql.objects;
+package org.dava.core.sql;
 
-import org.dava.core.sql.objects.conditions.Condition;
 
 import java.util.List;
+
+import org.dava.core.sql.service.conditions.Condition;
 
 public class Select {
 

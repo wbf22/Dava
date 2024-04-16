@@ -2,6 +2,7 @@ package org.dava.api;
 
 import org.dava.api.annotations.Query;
 import org.dava.core.database.objects.exception.DavaException;
+import org.dava.core.database.service.MarshallingService;
 import org.dava.core.database.service.structure.Database;
 import org.dava.core.database.service.structure.Row;
 import org.dava.core.database.service.structure.Table;
@@ -40,10 +41,9 @@ public class Repository<T, ID> {
         
         Equals equals = new Equals(columnName, value);
         
-        List<Row> rows = equals.retrieve(table, List.of(), null, null);
-        
-
-        return null;
+        return equals.retrieve(table, List.of(), null, null).stream()
+            .map(row -> MarshallingService.parseObject(row, table.getTableClass()))
+            .toList();
     }
 
 

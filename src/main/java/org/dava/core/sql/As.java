@@ -1,4 +1,4 @@
-package org.dava.core.sql.objects;
+package org.dava.core.sql;
 
 public class As {
 

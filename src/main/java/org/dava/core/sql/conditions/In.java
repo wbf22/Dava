@@ -1,4 +1,4 @@
-package org.dava.core.sql.objects.conditions;
+package org.dava.core.sql.conditions;
 
 import java.util.List;
 

@@ -1,4 +1,4 @@
-package org.dava.core.sql.objects.conditions;
+package org.dava.core.sql.conditions;
 
 import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.structure.*;

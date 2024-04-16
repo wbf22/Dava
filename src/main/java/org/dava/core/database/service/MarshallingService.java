@@ -6,7 +6,7 @@ import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.objects.exception.ExceptionType;
 import org.dava.core.database.service.structure.Database;
 import org.dava.core.database.service.structure.Row;
-import org.dava.core.sql.objects.Select;
+import org.dava.core.sql.Select;
 
 import java.lang.reflect.*;
 import java.time.temporal.Temporal;
@@ -119,26 +119,33 @@ public class MarshallingService {
 
     public static <T> T parseObject(Row row, Class<T> tableClass) {
         
-        
-
         T object;
         try {
             Constructor<?> defaultConstructor = tableClass.getDeclaredConstructor();
             object = safeCast(defaultConstructor.newInstance(), tableClass);
+
+            Map<String, Object> rowValues = row.getColumnsToValues();
+        
+            for (Field field : tableClass.getFields()) {
+                boolean originalAccessibility = field.canAccess(object);
+
+                try {
+                    field.setAccessible(true);
+
+                    field.set(
+                        object, 
+                        rowValues.get(field.getName())
+                    );
+                } finally {
+                    // Restore the original accessibility status
+                    field.setAccessible(originalAccessibility);
+                }
+            }
         } catch (NoSuchMethodException | SecurityException | InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
             throw new DavaException(ExceptionType.TABLE_PARSE_ERROR, "Couldn't find or call no args constructor on your table: " + tableClass.getName(), e);
         }
         
-        
-        for (Field field : tableClass.getFields()) {
-            
-            
-        
-        }
-
-
         return object;
-
     }
 
 
