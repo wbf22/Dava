@@ -1,4 +1,4 @@
-package org.dava.core.database.service.operations;
+package org.dava.core.database.service.operations.common;
 
 import org.dava.core.common.ArrayUtil;
 import org.dava.core.database.objects.exception.DavaException;

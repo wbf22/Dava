@@ -5,13 +5,13 @@ import java.util.List;
 import java.util.Map;
 
 import org.dava.api.annotations.Query;
-import org.dava.core.database.objects.database.structure.Database;
+import org.dava.core.database.service.structure.Database;
 
 public class OrderRepository extends Repository<Order, String> {
 
 
 
-    public OrderRepository(Database database, ) {
+    public OrderRepository(Database database) {
         super(database);
     }
 

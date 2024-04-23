@@ -1,4 +1,4 @@
-package org.dava.core.sql.service.parsing;
+package org.dava.core.sql.parsing;
 
 import java.util.List;
 

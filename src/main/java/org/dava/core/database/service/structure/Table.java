@@ -8,7 +8,7 @@ import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.fileaccess.FileUtil;
-import org.dava.core.database.service.operations.EmptiesPackage;
+import org.dava.core.database.service.operations.common.EmptiesPackage;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
 
 import java.io.File;

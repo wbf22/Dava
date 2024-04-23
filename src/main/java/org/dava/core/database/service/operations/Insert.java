@@ -6,6 +6,9 @@ import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.fileaccess.FileUtil;
+import org.dava.core.database.service.operations.common.Batch;
+import org.dava.core.database.service.operations.common.EmptiesPackage;
+import org.dava.core.database.service.operations.common.WritePackage;
 import org.dava.core.database.service.operations.delete.CountChange;
 import org.dava.core.database.service.operations.insert.IndexWritePackage;
 import org.dava.core.database.service.operations.insert.RowWritePackage;
@@ -43,7 +46,20 @@ public class Insert {
     }
 
 
-    public void insert(List<Row> rows) {
+    /**
+     * Inserts a list of rows into the table and partition provided when creating the insert.
+     * 
+     * <p> If 'replaceRollbackFile' is false, then this operation
+     * will just append it's rollback information to the rollback file. This effective places
+     * the work in this insert in a transaction with whatever the last operation was. To
+     * have multiple statements in a transaction, you want to have the first operation replace
+     * the rollback file, and then all subsequent operations append to it.
+     * 
+     * 
+     * @param rows
+     * @param replaceRollbackFile
+     */
+    public void insert(List<Row> rows, boolean replaceRollbackFile) {
         // TODO instead of using one partition, use multiple to be able to do all this in parallel
 
         this.rowEmpties = table.getEmptyRows(partition);
@@ -61,19 +77,23 @@ public class Insert {
 
         // repartition numeric indices (this is a write, but is done safely, repartitions aren't rolled back)
         Map<String, List<IndexWritePackage>> updatedWritePackages =
-            repartitionNumericIndices(table, partition, writeInsertBatch);
+            repartitionNumericIndices(table, partition, writeInsertBatch, replaceRollbackFile);
         writeInsertBatch.setIndexPathToIndicesWritten(updatedWritePackages);
 
         // build and log rollback
-        logRollback(writeInsertBatch.makeRollbackString(table, partition), table.getRollbackPath(partition));
+        logRollback(writeInsertBatch.makeRollbackString(table, partition), table.getRollbackPath(partition), replaceRollbackFile);
 
         // perform insert
         performInsert(writeInsertBatch);
     }
 
-    private void logRollback(String logString, String rollbackLogPath) {
+    private void logRollback(String logString, String rollbackLogPath, boolean replaceRollbackFile) {
         try {
-            FileUtil.replaceFile(rollbackLogPath, logString.getBytes(StandardCharsets.UTF_8) );
+            
+            if (replaceRollbackFile)
+                FileUtil.replaceFile(rollbackLogPath, logString.getBytes(StandardCharsets.UTF_8) );
+            else
+                FileUtil.writeBytesAppend(rollbackLogPath, logString.getBytes(StandardCharsets.UTF_8) );
         } catch (IOException e) {
             throw new DavaException(ROLLBACK_ERROR, "Error writing to rollback log", e);
         }
@@ -111,7 +131,7 @@ public class Insert {
         }
     }
 
-    private Map<String, List<IndexWritePackage>> repartitionNumericIndices(Table<?> table, String partition, Batch insertBatch) {
+    private Map<String, List<IndexWritePackage>> repartitionNumericIndices(Table<?> table, String partition, Batch insertBatch, boolean replaceRollbackFile) {
         Set<String> foldersToRepartition = new HashSet<>();
 
         // get the repartitions and log rollback for that
@@ -125,7 +145,7 @@ public class Insert {
                 foldersToRepartition.add(folderPath);
             }
         });
-        logRollback(repartitionRollbackString.toString(), table.getRollbackPath(partition));
+        logRollback(repartitionRollbackString.toString(), table.getRollbackPath(partition), replaceRollbackFile);
 
 
 

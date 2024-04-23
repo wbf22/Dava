@@ -2,7 +2,7 @@ package org.dava.core.database.service;
 
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
-import org.dava.core.database.service.operations.Batch;
+import org.dava.core.database.service.operations.common.Batch;
 import org.dava.core.database.service.structure.Table;
 
 import java.io.IOException;

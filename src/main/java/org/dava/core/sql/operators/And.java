@@ -3,7 +3,7 @@ package org.dava.core.sql.operators;
 import org.dava.core.database.service.structure.Database;
 import org.dava.core.database.service.structure.Row;
 import org.dava.core.database.service.structure.Table;
-import org.dava.core.sql.objects.conditions.Condition;
+import org.dava.core.sql.conditions.Condition;
 
 import java.util.List;
 
@@ -27,7 +27,7 @@ public class And implements Condition, Operator{
      * WHERE name='bob' AND (price=40.00 AND date='12/04/2024')
      */
     @Override
-    public List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Long limit, Long offset) {
+    public List<Row> retrieve(Table<?> table, List<Condition> parentFilters, Integer limit, Long offset) {
         // find most restricting condition first
         Condition mostRestrictingCondition = findMostRestrictingCondition(table);
         parentFilters.add(this);
@@ -64,4 +64,5 @@ public class And implements Condition, Operator{
             return (leftCount != null)? leftCount : rightCount;
         }
     }
+
 }

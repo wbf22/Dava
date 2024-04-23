@@ -9,6 +9,8 @@ import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.operations.*;
+import org.dava.core.database.service.operations.common.EmptiesPackage;
+import org.dava.core.database.service.operations.common.WritePackage;
 import org.dava.core.database.service.operations.insert.IndexWritePackage;
 import org.dava.core.database.service.structure.*;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
@@ -278,7 +280,9 @@ public class BaseOperationService {
     }
 
     /**
-     * Get's lines comparing with a numeric date. (Either greater than or less than). Uses indices if possible
+     * Get's rows comparing with a numeric value. (Either greater than or less than). Uses indices if possible
+     * 
+     * Is also used to compare dates which are converted to Bigdecimal milliseconds since the epoch
      */
     public static List<Row> getRowsComparingNumeric(
         Table<?> table,
@@ -477,7 +481,7 @@ public class BaseOperationService {
             return null; // returning null hear to indicate this folder could be anything over it's value
 
         return new BigDecimal(fileName);
-    };
+    }
 
     /**
      * Converts a file name to big decimal. Only used for numeric queries really. 
@@ -494,7 +498,7 @@ public class BaseOperationService {
             return null; // returning null hear to indicate this folder could be anything over it's value
 
         return new BigDecimal(fileName);
-    };
+    }
 
 
     private static Stream<Long> getNumericIndexValuesInFolder(String folderPath, Long point,

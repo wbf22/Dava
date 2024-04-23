@@ -6,7 +6,7 @@ import java.time.OffsetDateTime;
 import org.dava.api.annotations.PrimaryKey;
 import org.dava.api.annotations.Table;
 
-@Table
+@Table()
 public class Order {
     @PrimaryKey
     private String orderId;

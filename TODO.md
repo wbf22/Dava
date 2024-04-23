@@ -17,9 +17,14 @@
 - Spatial Queries for geo locations?
 - graph based database?
 - handle partitioning when table is too large
+- handle transactions in the repository class (look for annotation)
+
+# Done
 - consider sorting dates like numeric values using timestamps
 - Add transactions. Pass a value in inserts or updates to tell database to append rollback strings instead of overwriting
 
+
+
 # ToTest
 - test every thing with multiple partitions
-
+- table annotation with or without name

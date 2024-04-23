@@ -57,7 +57,7 @@ public class Cache {
             if (pathCache.get(resourceName).size() > MAX_RESOURCE_SIZE) invalidate(resourceName);
         }
         else {
-            Map<String, Object> resourceMap = new ConcurrentHashMap<>();
+            Map<String, Object> resourceMap = new HashMap<>();
             resourceMap.put(operationHash, result);
             pathCache.put(resourceName, resourceMap);
         }

@@ -6,6 +6,8 @@ import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.BaseOperationService;
 import org.dava.core.database.service.fileaccess.FileUtil;
+import org.dava.core.database.service.operations.common.Batch;
+import org.dava.core.database.service.operations.common.WritePackage;
 import org.dava.core.database.service.operations.delete.CountChange;
 import org.dava.core.database.service.operations.delete.IndexDelete;
 import org.dava.core.database.service.structure.*;
@@ -32,7 +34,19 @@ public class Delete {
     }
 
 
-    public void delete(List<Row> rows) {
+    /**
+     * Delete the provided rows checking each partition.
+     * 
+     * <p> If 'replaceRollbackFile' is false, then this operation
+     * will just append it's rollback information to the rollback file. This effective places
+     * the work in this delete in a transaction with whatever the last operation was. To
+     * have multiple statements in a transaction, you want to have the first operation replace
+     * the rollback file, and then all subsequent operations append to it.
+     * 
+     * @param rows
+     * @param replaceRollbackFile
+     */
+    public void delete(List<Row> rows, boolean replaceRollbackFile) {
         Map<String, Batch> deleteBatchesByPartition = table.getPartitions().parallelStream()
             .map(partition -> {
                 Batch batch = new Batch();
@@ -58,16 +72,21 @@ public class Delete {
             })
             .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 
-        execute(deleteBatchesByPartition);
+        execute(deleteBatchesByPartition, replaceRollbackFile);
     }
 
-    private void execute(Map<String, Batch> deleteBatchesByPartition) {
+    private void execute(Map<String, Batch> deleteBatchesByPartition, boolean replaceRollbackFile) {
         // log rollback
         table.getPartitions().parallelStream().forEach( partition -> {
             try {
                 Batch batch = deleteBatchesByPartition.get(partition);
                 String rollback = batch.makeRollbackString(table, partition);
-                FileUtil.replaceFile(table.getRollbackPath(partition), rollback.getBytes() );
+
+                if (replaceRollbackFile)
+                    FileUtil.replaceFile(table.getRollbackPath(partition), rollback.getBytes() );
+                else
+                    FileUtil.writeBytesAppend(table.getRollbackPath(partition), rollback.getBytes() );
+
             } catch (IOException e) {
                 throw new DavaException(ROLLBACK_ERROR, "Error writing to rollback log", e);
             }

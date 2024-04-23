@@ -11,13 +11,13 @@ import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.operations.Delete;
 import org.dava.core.database.service.operations.Insert;
 import org.dava.core.database.service.structure.*;
-import org.dava.core.sql.objects.conditions.After;
-import org.dava.core.sql.objects.conditions.All;
-import org.dava.core.sql.objects.conditions.Before;
-import org.dava.core.sql.objects.conditions.Equals;
-import org.dava.core.sql.objects.conditions.GreaterThan;
-import org.dava.core.sql.objects.conditions.LessThan;
-import org.dava.core.sql.objects.logic.operators.And;
+import org.dava.core.sql.conditions.After;
+import org.dava.core.sql.conditions.All;
+import org.dava.core.sql.conditions.Before;
+import org.dava.core.sql.conditions.Equals;
+import org.dava.core.sql.conditions.GreaterThan;
+import org.dava.core.sql.conditions.LessThan;
+import org.dava.core.sql.operators.And;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -61,7 +61,7 @@ class BasicOperationsTest {
         });
 
         Insert insert = new Insert(database, table, table.getRandomPartition());
-        insert.insert(rows);
+        insert.insert(rows, true);
 
         log.info("Seed: " + seed);
 
@@ -98,7 +98,8 @@ class BasicOperationsTest {
                     BigDecimal.valueOf(Math.abs(random.nextLong(0, 5))),
                     time
                 );
-                return MarshallingService.parseRow(orderTable).get(0);
+                Map<String, List<Row>> res = MarshallingService.parseRow(orderTable);
+                return res.get(orderTable.getClass().getSimpleName()).get(0);
             })
             .toList();
     }
@@ -134,7 +135,7 @@ class BasicOperationsTest {
         Insert insert = new Insert(database, table, table.getRandomPartition());
 
         Timer timer = Timer.start();
-        insert.insert(rows);
+        insert.insert(rows, true);
         timer.printRestart();
 
         long size = table.getSize(table.getRandomPartition());
@@ -148,7 +149,7 @@ class BasicOperationsTest {
 
         Timer timer = Timer.start();
         Equals equals = new Equals("total", "25");
-        List<Row> rows = equals.retrieve(table, new ArrayList<>(), 10L, null);
+        List<Row> rows = equals.retrieve(table, new ArrayList<>(), 10, null);
         timer.printRestart();
 
         rows.forEach( row -> {
@@ -169,7 +170,7 @@ class BasicOperationsTest {
             new Equals("total", "25"),
             new Equals("discount", "1")
         );
-        List<Row> rows = and.retrieve(table, new ArrayList<>(), 10L, 1L);
+        List<Row> rows = and.retrieve(table, new ArrayList<>(), 10, 1L);
         timer.printRestart();
 
         rows.forEach( row -> {
@@ -196,7 +197,7 @@ class BasicOperationsTest {
                 date,
                 true
         );
-        List<Row> rows = after.retrieve(table, new ArrayList<>(), 10L, offset);
+        List<Row> rows = after.retrieve(table, new ArrayList<>(), 10, offset);
         timer.printRestart();
 
         log.debug(date.toString());
@@ -225,7 +226,7 @@ class BasicOperationsTest {
                 date,
                 true
         );
-        List<Row> rows = before.retrieve(table, new ArrayList<>(), 10L, offset);
+        List<Row> rows = before.retrieve(table, new ArrayList<>(), 10, offset);
         timer.printRestart();
 
         log.debug(date.toString());
@@ -251,7 +252,7 @@ class BasicOperationsTest {
 
         Delete delete = new Delete(database, table);
         Timer timer = Timer.start();
-        delete.delete(rows);
+        delete.delete(rows, true);
         timer.printRestart();
 
         List<Row> afterRows = equals.retrieve(table, new ArrayList<>(), null, null);
@@ -272,7 +273,7 @@ class BasicOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
-        insert.insert(rows);
+        insert.insert(rows, true);
 
         // get all rows
         List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
@@ -312,7 +313,7 @@ class BasicOperationsTest {
         Equals equals = new Equals("discount", "1");
         List<Row> rows = equals.retrieve(table, new ArrayList<>(), null, null);
         Delete delete = new Delete(database, table);
-        delete.delete(rows);
+        delete.delete(rows, true);
 
         // rollback
         Timer timer = Timer.start();
@@ -393,7 +394,7 @@ class BasicOperationsTest {
             true,
             null
         );
-        List<Row> rows = greaterThan.retrieve(table, new ArrayList<>(), 10L, offset);
+        List<Row> rows = greaterThan.retrieve(table, new ArrayList<>(), 10, offset);
         timer.printRestart();
 
         log.debug(value.toString());
@@ -425,7 +426,7 @@ class BasicOperationsTest {
                 true,
                 null
         );
-        List<Row> rows = lessThan.retrieve(table, new ArrayList<>(), 10L, offset);
+        List<Row> rows = lessThan.retrieve(table, new ArrayList<>(), 10, offset);
         timer.printRestart();
 
         log.debug(value.toString());

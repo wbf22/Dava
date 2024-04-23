@@ -1,6 +1,6 @@
 package org.dava.core.database.service.operations.insert;
 
-import org.dava.core.database.service.operations.WritePackage;
+import org.dava.core.database.service.operations.common.WritePackage;
 import org.dava.core.database.service.structure.Column;
 import org.dava.core.database.service.structure.Route;
 

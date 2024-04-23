@@ -64,8 +64,6 @@ public class Repository<T, ID> {
             .orElse(null);
     }
 
-
-
     /**
      * finds all table records in the list of ids.
      * 
@@ -88,8 +86,6 @@ public class Repository<T, ID> {
             .findFirst()
             .orElse(null);
     }
-
-
 
     /**
      * Finds all table records for the given column name and value.
@@ -223,7 +219,7 @@ public class Repository<T, ID> {
             Table<?> tableOfRow = database.getTableByName(tableName);
             Insert insert = new Insert(database, tableOfRow, tableOfRow.getRandomPartition());
             insert.insert(
-                tableNameToRows.get(tableName)
+                tableNameToRows.get(tableName), true
             );
         }
         
@@ -262,7 +258,7 @@ public class Repository<T, ID> {
             Table<?> tableOfRow = database.getTableByName(tableName);
             Insert insert = new Insert(database, tableOfRow, tableOfRow.getRandomPartition());
             insert.insert(
-                tableNameToRows.get(tableName)
+                tableNameToRows.get(tableName), true
             );
         }
     }
@@ -278,14 +274,7 @@ public class Repository<T, ID> {
         Equals equals = new Equals(MarshallingService.getPrimaryKeyField(table.getTableClass()).getName(), primaryKey.toString());
         List<Row> rows = equals.retrieve(table, List.of(), null, null);
 
-        Delete delete = new Delete(database, table);
-        delete.delete(rows);
-
-        if (cascade) {
-            List<Row> childRows = getRowsOfAllSubObjects(rows, null);
-
-        }
-
+        deleteRows(rows, cascade);
     }
 
     /**
@@ -295,6 +284,31 @@ public class Repository<T, ID> {
      */
     public void deleteAll(List<ID> primaryKeys, boolean cascade) {
 
+        String primaryKeyFieldName = MarshallingService.getPrimaryKeyField(table.getTableClass()).getName();
+        In in = new In(
+            primaryKeys.stream()
+                .map(Objects::toString)
+                .collect(Collectors.toSet()), 
+            primaryKeyFieldName
+        );
+        List<Row> rows = in.retrieve(table, List.of(), null, null);
+
+        deleteRows(rows, cascade);
+    }
+
+    private void deleteRows(List<Row> rows, boolean cascade) {
+
+        Delete delete = new Delete(database, table);
+        delete.delete(rows, true);
+
+        if (cascade) {
+            Map<String, List<Row>> childRows = getRowsOfAllSubObjects(rows, null);
+            for (String tableName : childRows.keySet()) {
+                Table<?> rowTable = database.getTableByName(tableName);
+                Delete childDelete = new Delete(database, rowTable);
+                childDelete.delete(childRows.get(tableName), true);
+            }
+        }
     }
 
     private Map<String, List<Row>> getRowsOfAllSubObjects(List<Row> rows, Class<?> tableClass) {
@@ -302,7 +316,8 @@ public class Repository<T, ID> {
 
         for (Field field : tableClass.getFields()) {
             Class<?> fieldType = field.getType();
-            if (fieldType.getAnnotation(org.dava.api.annotations.Table.class) != null) {
+            org.dava.api.annotations.Table tableAnnotation = fieldType.getAnnotation(org.dava.api.annotations.Table.class);
+            if (tableAnnotation != null) {
                 String primaryKeyFieldName = MarshallingService.getPrimaryKeyField(fieldType).getName();
 
                 Set<String> primaryKeys = rows.stream()
@@ -314,9 +329,20 @@ public class Repository<T, ID> {
 
                 // check all child rows to see if they have any children that are also in other tables
                 Map<String, List<Row>> childChildRows = getRowsOfAllSubObjects(newRows, fieldType);
+                for (String tableName : childChildRows.keySet()) {
+                    if (childRows.containsKey(tableName))
+                        childRows.get(tableName).addAll(childChildRows.get(tableName));
+                    else
+                        childRows.put(tableName, childChildRows.get(tableName));
+                        
+                }
 
                 // add all child rows to list
-                childRows.put(tableClass.getSimpleName(), rows);
+                String tableName = tableAnnotation.name();
+                if (childRows.containsKey(tableName))
+                    childRows.get(tableName).addAll(newRows);
+                else
+                    childRows.put(tableName, newRows);
             }
 
         }
