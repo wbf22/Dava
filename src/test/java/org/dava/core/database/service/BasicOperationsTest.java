@@ -1,6 +1,6 @@
 package org.dava.core.database.service;
 
-import org.dava.api.DavaTSID;
+import org.dava.api.DavaId;
 import org.dava.api.Order;
 import org.dava.core.common.StreamUtil;
 import org.dava.core.common.Timer;
@@ -92,7 +92,7 @@ class BasicOperationsTest {
                 );
 //            time = time.withOffsetSameInstant(ZoneOffset.UTC);
                 Order orderTable = new Order(
-                    DavaTSID.generateId("order", String.valueOf(random.nextInt(1000000000))),
+                    DavaId.generateId("order", String.valueOf(random.nextInt(1000000000))),
                     "This is a long description. A lot of tables could have something like this, so this will be a good test.",
                     BigDecimal.valueOf(Math.abs(random.nextLong(0, 100))),
                     BigDecimal.valueOf(Math.abs(random.nextLong(0, 5))),

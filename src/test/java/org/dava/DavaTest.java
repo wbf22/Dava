@@ -13,10 +13,10 @@ public class DavaTest {
         Logger logger = Logger.getLogger(DavaTest.class.getName());
 
         logger.info(
-            DavaId.randomId("ord", 16, 8, true)
+            DavaId.randomId("ord", null, 16, 8, true)
         );
         logger.info(
-            DavaId.randomId("ord", 16, 8, false)
+            DavaId.randomId("ord", null, 16, 8, false)
         );
 
         //ord_ef3fa803-425c-4a12-9a57-b9346a044d24

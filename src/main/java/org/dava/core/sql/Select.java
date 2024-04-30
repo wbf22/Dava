@@ -2,6 +2,7 @@ package org.dava.core.sql;
 
 
 import java.util.List;
+import java.util.Map;
 
 import org.dava.core.sql.conditions.Condition;
 
@@ -9,15 +10,10 @@ import org.dava.core.sql.conditions.Condition;
 public class Select {
 
     private List<As> asNamesOfFields;
-    private String from;
+    private From from;
+    private List<Join> joins;
     private Condition where;
-
-
-    public Select(List<As> asNamesOfFields, String from, Condition where) {
-        this.asNamesOfFields = asNamesOfFields;
-        this.from = from;
-        this.where = where;
-    }
+    private Map<String, String> aliasToTableName;
 
 
 

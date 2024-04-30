@@ -29,11 +29,11 @@ public class Batch {
 
     // delete
     private List<Row> rows;
-    private Long oldTableSize;
     private Long oldEmptiesSize;
     private Map<String, IndexDelete> indexPathToInvalidRoutes;
 
     // shared
+    private Long oldTableSize;
     private Map<String, CountChange> numericCountFileChanges;
 
 
@@ -103,9 +103,11 @@ public class Batch {
                 );
             }
             else if (line.startsWith("Rw:")) {
-                String nums = line.substring(5);
+                String route = line.split(";")[0];
+                String nums = route.substring(5);
                 Long offset = Long.parseLong(nums.split(",")[0]);
                 Integer length = Integer.parseInt(nums.split(",")[1]);
+                Row row = new Row(line.split(";")[1], table, null);
 
                 rowsWritten.add(
                     new RowWritePackage(
@@ -114,7 +116,7 @@ public class Batch {
                             offset,
                             length
                         ),
-                        null,
+                        row,
                         null
                     )
                 );
@@ -236,9 +238,10 @@ public class Batch {
      * - ES: old empties size
      * - ID: invalidated index by row removal
      * - C: numeric count file change
+     * - --: new batch
      */
     public String makeRollbackString(Table<?> table, String partition) {
-        StringBuilder builder = new StringBuilder();
+        StringBuilder builder = new StringBuilder("--\n");
 
 
         // for rolling back rows added to the table
@@ -268,14 +271,16 @@ public class Batch {
             ));
 
         // for rolling back rows added to the table
-        rowsWritten.forEach(rowWritePackage ->
+        rowsWritten.forEach(rowWritePackage -> {
             builder.append("Rw:")
                 .append("R:")
                 .append(rowWritePackage.getRoute().getOffsetInTable())
                 .append(",")
                 .append(rowWritePackage.getRoute().getLengthInTable())
-                .append("\n")
-        );
+                .append(";");
+            builder.append(Row.serialize(table, rowWritePackage.getRow().getColumnsToValues()))
+                .append("\n");
+        });
 
         // all the rows that are being deleted
         rows.forEach( row -> {
@@ -421,18 +426,11 @@ public class Batch {
             }
             else if (rowsWritten.size() > 0) {
                 // if light mode, just get all the rows out, remove those to delete, and then write them back
-                List<Route> routesToDelete = rowsWritten.stream()
-                    .map(RowWritePackage::getRoute)
-                    .toList();
-
                 List<Row> allRowsWithoutThoseToDelete = BaseOperationService.getAllRowsInTablePartitionWithoutIndicies(table, partition).stream()
                     .filter(row -> {
-                        Route location = row.getLocationInTable();
                         // check if routesToDelete contains the row route
-                        boolean containsRowRoute = routesToDelete.stream()
-                            .map(route ->
-                                location.getOffsetInTable().equals(route.getOffsetInTable()) && location.getLengthInTable().equals(route.getLengthInTable())
-                            )
+                        boolean containsRowRoute = rowsWritten.stream()
+                            .map(rowToDelete -> rowToDelete.getRow().equals(row))
                             .reduce(Boolean::logicalOr)
                             .orElse(false);
                         return !containsRowRoute;
@@ -485,7 +483,7 @@ public class Batch {
         try {
             if (table.getMode() == Mode.LIGHT) { // if it's light mode we need to put a new line on the end
                 String tablePath = table.getTablePath(partition);
-                FileUtil.writeBytes(tablePath, FileUtil.fileSize(tablePath), "\n".getBytes(StandardCharsets.UTF_8));
+                // FileUtil.writeBytes(tablePath, FileUtil.fileSize(tablePath), "\n".getBytes(StandardCharsets.UTF_8));
             }
             AtomicReference<Long> offset = new AtomicReference<>(
                 FileUtil.fileSize(table.getTablePath(partition))

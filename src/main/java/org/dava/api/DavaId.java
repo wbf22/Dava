@@ -9,7 +9,7 @@ public class DavaId {
     private static final int DIV_LENGTH = 8;
     
     public static String generateId(String tableName, String seed) {
-        return tableName + "_" + UUID.nameUUIDFromBytes(seed.getBytes()).toString().substring(0, 7).toUpperCase();
+        return randomId(tableName, seed, 8, DIV_LENGTH, false);
     }
 
 
@@ -22,8 +22,14 @@ public class DavaId {
      * @param length
      * @return
      */
-    public static String randomId(String prefix, Integer length, Integer divLength, boolean upperCase) {
-        String uuid = UUID.randomUUID().toString().replace("-", "");
+    public static String randomId(String prefix, String seed, Integer length, Integer divLength, boolean upperCase) {
+        String uuid;
+        if (seed == null) 
+            uuid = UUID.randomUUID().toString();
+        else
+            uuid = UUID.nameUUIDFromBytes(seed.getBytes()).toString();
+        
+        uuid = uuid.replace("-", "");
 
         uuid = upperCase ? uuid.toUpperCase() : uuid.toLowerCase();
 

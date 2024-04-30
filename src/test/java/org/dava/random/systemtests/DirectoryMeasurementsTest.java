@@ -1,4 +1,4 @@
-package org.dava.core.systemtests;
+package org.dava.random.systemtests;
 
 import org.dava.core.common.logger.Logger;
 import org.dava.core.database.service.fileaccess.FileUtil;

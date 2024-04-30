@@ -1,10 +1,8 @@
 package org.dava.core.database.service.operations;
 
-import org.dava.core.database.objects.dates.Date;
-import org.dava.core.common.Bundle;
-import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.BaseOperationService;
+import org.dava.core.database.service.Rollback;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.operations.common.Batch;
 import org.dava.core.database.service.operations.common.EmptiesPackage;
@@ -14,16 +12,12 @@ import org.dava.core.database.service.operations.insert.IndexWritePackage;
 import org.dava.core.database.service.operations.insert.RowWritePackage;
 import org.dava.core.database.service.structure.*;
 
-import java.io.File;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
-import static org.dava.core.common.Checks.safeCast;
 import static org.dava.core.database.objects.exception.ExceptionType.*;
 
 
@@ -76,10 +70,15 @@ public class Insert {
         writeInsertBatch.setOldTableSize( table.getSize(partition) );
 
         // repartition numeric indices (this is a write, but is done safely, repartitions aren't rolled back)
-        Map<String, List<IndexWritePackage>> updatedWritePackages =
-            repartitionNumericIndices(table, partition, writeInsertBatch, replaceRollbackFile);
-        writeInsertBatch.setIndexPathToIndicesWritten(updatedWritePackages);
-
+        try {
+            Map<String, List<IndexWritePackage>> updatedWritePackages =
+                repartitionNumericIndices(table, partition, writeInsertBatch, replaceRollbackFile);
+            writeInsertBatch.setIndexPathToIndicesWritten(updatedWritePackages);
+        } catch(Exception e) {
+            // the repartition fails itself, then we determine how to finish it (can undo what was done or finish it)
+            Rollback.handleNumericRepartitionFailure(table, partition);
+        }
+        
         // build and log rollback
         logRollback(writeInsertBatch.makeRollbackString(table, partition), table.getRollbackPath(partition), replaceRollbackFile);
 
@@ -145,11 +144,11 @@ public class Insert {
                 foldersToRepartition.add(folderPath);
             }
         });
-        logRollback(repartitionRollbackString.toString(), table.getRollbackPath(partition), replaceRollbackFile);
+        logRollback(repartitionRollbackString.toString(), table.getNumericRollbackPath(partition), replaceRollbackFile);
 
 
 
-        // do the repartition
+        // determine folders to repartition
         Map<String, List<String>> folderPathToIndexPaths = new HashMap<>();
         insertBatch.getIndexPathToIndicesWritten().forEach( (indexPath, writePackages) -> {
             IndexWritePackage firstPackage = writePackages.get(0);
@@ -171,12 +170,15 @@ public class Insert {
 
         foldersToRepartition.forEach(folderPath -> {
             List<String> affectedIndexPaths = folderPathToIndexPaths.get(folderPath);
-            BigDecimal defaultMedian = new BigDecimal(
-                Path.of( affectedIndexPaths.get(0) ).getFileName().toString()
-                    .replace(".index", "").replace("+", "").replace("-", "")
-            );
             if (affectedIndexPaths != null) {
+                BigDecimal defaultMedian = new BigDecimal(
+                    Path.of( affectedIndexPaths.get(0) ).getFileName().toString()
+                        .replace(".index", "").replace("+", "").replace("-", "")
+                );
+                
+                // actual repartition takes place
                 BigDecimal median = BaseOperationService.repartitionNumericIndex(folderPath, defaultMedian);
+
                 affectedIndexPaths.forEach(indexPath -> {
                     List<IndexWritePackage> writePackages = insertBatch.getIndexPathToIndicesWritten().get(indexPath);
 
@@ -201,58 +203,6 @@ public class Insert {
         });
 
         return insertBatch.getIndexPathToIndicesWritten();
-    }
-
-    private void rollbackNumericRepartitionFailure() {
-        // on rollback, if not all were moved, delete all in new partitions, else delete all in current partition
-        List<String> lines = new ArrayList<>();
-        try {
-            lines = List.of(
-                new String(
-                    FileUtil.readBytes(table.getRollbackPath(partition)), StandardCharsets.UTF_8
-                ).split("\n")
-            );
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
-
-        try {
-            for (String line : lines) {
-                String folderPath = line.split(":")[1];
-                File[] files = FileUtil.listFiles(folderPath);
-                List<File> subFiles = new ArrayList<>();
-                List<File> filesInCurrent = new ArrayList<>();
-                List<File> directories = new ArrayList<>();
-                for (File file : files) {
-                    if (file.isDirectory()) {
-                        directories.add(file);
-                    }
-                    else {
-                        filesInCurrent.add(file);
-                        subFiles.addAll(
-                            List.of(FileUtil.listFiles(file.getPath()))
-                        );
-                    }
-                }
-
-                // if all were moved, delete files in current partition
-                // subFiles.size() should be filesInCurrent.size() + 1 if moved
-                // if all were moved and some were deleted from current, then we can safely delete all in current
-                if (subFiles.size()-1 > filesInCurrent.size()) {
-                    for (File file : filesInCurrent) {
-                        FileUtil.deleteFile(file);
-                    }
-                }
-                else {
-                    for (File file : subFiles) {
-                        FileUtil.deleteFile(file);
-                    }
-                }
-            }
-        } catch (IOException e) {
-            throw new DavaException(ROLLBACK_ERROR, "Error in rolling back repartition that failed during insert", e);
-        }
-
     }
 
 
@@ -307,6 +257,7 @@ public class Insert {
                     Object value = Index.prepareValueForIndexName(columnValue.getValue(), column);
                     String indexPath = Index.indexPathBypass(folderPath, value);
 
+                    // determine if we're planning on making new indices in a numeric repartition
                     if ( Index.isNumericallyIndexed(column.getType()) && !FileUtil.exists(indexPath) && !countedIndexPaths.contains(indexPath)) {
                         CountChange count = countUpdates.get(folderPath);
                         countUpdates.put(

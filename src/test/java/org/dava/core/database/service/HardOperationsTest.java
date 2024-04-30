@@ -1,6 +1,6 @@
 package org.dava.core.database.service;
 
-import org.dava.api.DavaTSID;
+import org.dava.api.DavaId;
 import org.dava.api.Order;
 import org.dava.core.common.Timer;
 import org.dava.core.common.logger.Level;
@@ -100,7 +100,7 @@ class HardOperationsTest {
                 );
 //            time = time.withOffsetSameInstant(ZoneOffset.UTC);
                 Order orderTable = new Order(
-                    DavaTSID.generateId("order", String.valueOf(random.nextInt(1000000000))),
+                    DavaId.generateId("order", String.valueOf(random.nextInt(1000000000))),
                     "This is a long description. A lot of tables could have something like this, so this will be a good test.",
                     BigDecimal.valueOf(Math.abs(random.nextLong(0, 100))),
                     BigDecimal.valueOf(Math.abs(random.nextLong(0, 5))),
@@ -480,11 +480,242 @@ class HardOperationsTest {
     }
 
 
-    //@Test
-    void insert_fails_during_numeric_repartition() {
 
+    @ParameterizedTest
+    @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
+//    @ValueSource(strings = {"LIGHT"})
+    void insert_delete_in_transaction_then_rollback(Mode tableMode) throws IOException {
+        setUp(tableMode);
+
+
+        Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+
+
+        // do insert
+        int INSERT_ITERATIONS = 100;
+        List<Row> firstInsertRows = makeRows(seed + ITERATIONS, INSERT_ITERATIONS);
+        firstInsertRows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        Insert insert = new Insert(database, table, partition);
+        insert.insert(firstInsertRows, true);
+
+        long intialSize = table.getSize(partition);
+
+
+        // do insert start of transaction
+        List<Row> transactionInsertRows = makeRows(seed + ITERATIONS+ INSERT_ITERATIONS, INSERT_ITERATIONS);
+        transactionInsertRows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        insert = new Insert(database, table, partition);
+        insert.insert(transactionInsertRows, true);
+
+
+        // do delete
+        Equals equals = new Equals("discount", "1");
+        List<Row> rowsToDelete = equals.retrieve(table, new ArrayList<>(), null, null);
+        Delete delete = new Delete(database, table);
+        delete.delete(rowsToDelete, false);
+
+        // rollback transaction (2nd insert and delete operation)
+        Timer timer = Timer.start();
+        Rollback rollback = new Rollback();
+        rollback.rollback(table, partition, table.getRollbackPath(partition));
+        timer.printRestart();
+
+        // assert table is the same size after rollback
+        long size = table.getSize(partition);
+        assertEquals(intialSize, size);
     }
 
+
+    @ParameterizedTest
+    @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
+    void insert_fails_during_numeric_repartition(Mode tableMode) throws IOException {
+
+        setUp(tableMode);
+
+        Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+        long intialSize = table.getSize(partition);
+
+
+        // mock fileutil cache so we can through failures
+        Cache spyCache = Mockito.spy(new Cache());
+        FileUtil.cache = spyCache;
+        doCallRealMethod()
+            .doCallRealMethod()
+            .doCallRealMethod()
+            .doCallRealMethod()
+            .doCallRealMethod()
+            .doCallRealMethod()
+            .doThrow(DavaException.class)
+            .doCallRealMethod()
+            .when(spyCache).invalidateCacheAll();
+
+
+        // get all rows
+        List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
+
+
+        // do insert
+        int INSERT_ITERATIONS = 100;
+        List<Row> rows = makeRows(seed + ITERATIONS, INSERT_ITERATIONS);
+        rows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        Insert insert = new Insert(database, table, partition);
+        try {
+            insert.insert(rows, true);
+        } catch (DavaException e) {
+            log.trace("caught");
+        }
+
+
+        FileUtil.cache = new Cache();
+
+        // rollback
+        Timer timer = Timer.start();
+        Rollback rollback = new Rollback();
+        rollback.rollback(table, partition, table.getRollbackPath(partition));
+        timer.printRestart();
+
+        // get all rows
+        List<Row> allRowAfter = new All().retrieve(table, List.of(), null, null);
+
+
+        // assert table is the same size after rollback
+        long size = table.getSize(partition);
+        assertEquals(intialSize, size);
+
+        // assert none all the rows before are in the table after
+        allRowBefore.forEach(beforeRow ->
+            assertTrue(
+                allRowAfter.stream()
+                    .anyMatch(afterRow -> afterRow.equals(beforeRow))
+            )
+        );
+    }
+
+
+    @ParameterizedTest
+    @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
+    // @ValueSource(strings = {"INDEX_ALL"})
+    void second_insert_fails_during_numeric_repartition_(Mode tableMode) throws IOException {
+
+        setUp(tableMode);
+
+        Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+        long intialSize = table.getSize(partition);
+
+        // get all rows
+        List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
+
+
+        // do insert
+        int INSERT_ITERATIONS = 100;
+        List<Row> firstInsertRows = makeRows(seed + ITERATIONS, INSERT_ITERATIONS);
+        firstInsertRows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        Insert insert = new Insert(database, table, partition);
+        insert.insert(firstInsertRows, true);
+
+
+
+        // mock fileutil cache so we can through failures
+        Cache spyCache = Mockito.spy(new Cache());
+        FileUtil.cache = spyCache;
+        doCallRealMethod()
+            .doCallRealMethod()
+            .doCallRealMethod()
+            .doCallRealMethod()
+            .doCallRealMethod()
+            .doCallRealMethod()
+            .doThrow(DavaException.class)
+            .doCallRealMethod()
+            .when(spyCache).invalidateCacheAll();
+
+
+        // do insert
+        List<Row> rows = makeRows(seed + ITERATIONS + ITERATIONS, INSERT_ITERATIONS);
+        rows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        Insert insert2 = new Insert(database, table, partition);
+        try {
+            insert2.insert(rows, false);
+        } catch (DavaException e) {
+            log.trace("caught");
+        }
+
+
+        FileUtil.cache = new Cache();
+
+        // rollback
+        Timer timer = Timer.start();
+        Rollback rollback = new Rollback();
+        rollback.rollback(table, partition, table.getRollbackPath(partition));
+        timer.printRestart();
+
+        // get all rows
+        List<Row> allRowAfter = new All().retrieve(table, List.of(), null, null);
+
+
+        // assert table is the same size after rollback
+        long size = table.getSize(partition);
+        assertEquals(intialSize, size);
+
+        // assert none all the rows before are in the table after
+        allRowBefore.forEach(beforeRow ->
+            assertTrue(
+                allRowAfter.stream()
+                    .anyMatch(afterRow -> afterRow.equals(beforeRow))
+            )
+        );
+    }
+
+
+    @ParameterizedTest
+    @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
+    // @ValueSource(strings = {"INDEX_ALL"})
+    void triple_insert(Mode tableMode) throws IOException {
+
+        setUp(tableMode);
+
+        Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+        long intialSize = table.getSize(partition);
+
+        // do insert
+        int INSERT_ITERATIONS = 100;
+        List<Row> firstInsertRows = makeRows(seed + ITERATIONS, INSERT_ITERATIONS);
+        firstInsertRows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        Insert insert = new Insert(database, table, partition);
+        insert.insert(firstInsertRows, true);
+
+        List<Row> secondInsertRows = makeRows(seed + ITERATIONS + ITERATIONS, INSERT_ITERATIONS);
+        secondInsertRows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        Insert insert2 = new Insert(database, table, partition);
+        insert2.insert(secondInsertRows, false);
+
+
+        // get all rows
+        List<Row> allRowAfter = new All().retrieve(table, List.of(), null, null);
+        assertEquals(intialSize + INSERT_ITERATIONS * 2 - 1, allRowAfter.size());
+
+        // assert table size is correct
+        long size = table.getSize(partition);
+        assertEquals(intialSize + INSERT_ITERATIONS * 2, size);
+
+    }
 
 
 }

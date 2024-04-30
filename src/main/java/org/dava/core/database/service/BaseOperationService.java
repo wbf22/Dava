@@ -3,12 +3,10 @@ package org.dava.core.database.service;
 
 import org.dava.core.common.ArrayUtil;
 import org.dava.core.common.Bundle;
-import org.dava.core.common.CheckException;
 import org.dava.core.common.TypeUtil;
 import org.dava.core.database.objects.dates.Date;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.fileaccess.FileUtil;
-import org.dava.core.database.service.operations.*;
 import org.dava.core.database.service.operations.common.EmptiesPackage;
 import org.dava.core.database.service.operations.common.WritePackage;
 import org.dava.core.database.service.operations.insert.IndexWritePackage;
@@ -20,7 +18,6 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.time.LocalDate;
 import java.util.*;
 import java.util.function.BiPredicate;
 import java.util.function.Function;
@@ -635,7 +632,8 @@ public class BaseOperationService {
             Arrays.stream(files).forEach( file -> {
                 String fileName = file.getName();
                 if ( !fileName.contains(".count") ) { // looking at .index files and their respective .empties files
-                    if ( new BigDecimal(fileName.split("\\.")[0]).compareTo(median) > 0 ) {
+                    BigDecimal numberValue = new BigDecimal(fileName.split("\\.")[0]);
+                    if ( numberValue.compareTo(median) < 0 ) {
                         lessThan.add(file);
                     }
                     else {

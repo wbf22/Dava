@@ -1,4 +1,4 @@
-package org.dava.core.systemtests;
+package org.dava.random.systemtests;
 
 import org.dava.core.common.Timer;
 import org.dava.core.common.logger.Logger;
@@ -152,5 +152,39 @@ public class RandomTests {
         FileUtil.deleteDirectory("db" + "/Order");
     }
 
+
+    @Test
+    void testStringComparingLongVsShort() {
+
+        /*
+            TEST RESULTS:
+                4ms
+                5ms
+
+            Comparing a short string vs a long string is almost no difference in time
+         */
+
+         int ITERATIONS = 100000000;
+
+         String shortStr = "ord_dfasdfasd";
+         String shortStr2 = "ord_dfasdfass";
+         String longStr = "ddddddasdlkfasd;glkawe;loijg;asdoifkja;sdlfkajsdfasdfasdfddddddasdlkfasd;glkawe;loijg;asdoifkja;sdlfkajsdfasdfasdfddddddasdlkfasd;glkawe;loijg;asdoifkja;sdlfkajsdfasdfasdf";
+         String longStr2 = "ddddddasdlkfasd;glkawe;loijg;asdoifkja;sdlfkajsdfasdfasdfddddddasdlkfasd;glkawe;loijg;asdoifkja;sdlfkajsdfasdfasdfddddddasdlkfasd;glkawe;loijg;asdoifkja;sdlfkajsdfasdfasdd";
+ 
+         Timer timer = Timer.start();
+         IntStream.range(0, ITERATIONS)
+             .forEach( i -> {
+                boolean equal = shortStr.equals(shortStr2);
+             });
+         timer.printRestart();
+ 
+         timer = Timer.start();
+         IntStream.range(0, ITERATIONS)
+             .forEach( i -> {
+                boolean equal = longStr.equals(longStr2);
+             });
+         timer.printRestart();
+
+    }
 
 }

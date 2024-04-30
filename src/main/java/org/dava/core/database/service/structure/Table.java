@@ -125,6 +125,9 @@ public class Table<T> {
 
         random = new Random(seed);
 
+
+        // start up maintenance
+        doStartupMaintenance();
     }
 
     public void initTableCsv(String partition) {
@@ -231,6 +234,13 @@ public class Table<T> {
         }
     }
 
+    private void doStartupMaintenance() {
+        // On restart after crash, scan numeric partitions for any partially complete repartitions and finish the work
+        
+
+
+    }
+
     private String indicesFolder(String partition) {
         return directory + "/META_" + partition;
     }
@@ -292,6 +302,10 @@ public class Table<T> {
 
     public String getRollbackPath(String partition) {
         return indicesFolder(partition) + "/" + partition + ".rollback";
+    }
+
+    public String getNumericRollbackPath(String partition) {
+        return indicesFolder(partition) + "/" + partition + ".numeric_rollback";
     }
 
     public List<File> getLeafList(String partition, String columnName) {

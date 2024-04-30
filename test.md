@@ -18,5 +18,3 @@ What we really need is a data structure which does this:
 
 One file for indices (or for each column) would be preferable (x300 speed for insert).
 - this is only better if you don't seek/jump to different positions in the file
-
-
