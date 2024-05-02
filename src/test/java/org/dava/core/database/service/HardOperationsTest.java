@@ -931,17 +931,8 @@ class HardOperationsTest {
         List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
 
 
-        // do insert
-        int INSERT_ITERATIONS = 100;
-        List<Row> rows = makeRows(seed + ITERATIONS, INSERT_ITERATIONS);
-        rows.forEach(row -> {
-            log.trace(Row.serialize(table, row.getColumnsToValues()));
-        });
-        Insert insert = new Insert(database, table, partition);
-
         // mock fileutil so we can through failures
         FileUtil spyFileUtil = Mockito.spy(new FileUtil());
-        insert.fileUtil = spyFileUtil;
         doAnswer(new Answer<Void>() {
             @Override
             public Void answer(InvocationOnMock invocation) throws Throwable {
@@ -982,7 +973,12 @@ class HardOperationsTest {
             );
 
         try {
-            insert.insert(rows, true);
+            Equals equals = new Equals("discount", "1");
+            List<Row> rowsToDelete = equals.retrieve(table, new ArrayList<>(), null, null);
+            Delete delete = new Delete(database, table);
+            delete.fileUtil = spyFileUtil;
+
+            delete.delete(rowsToDelete, true);
         } catch (DavaException e) {
             log.trace("caught");
         }
