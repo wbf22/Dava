@@ -7,6 +7,7 @@ import org.dava.core.database.service.fileaccess.FileUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
@@ -19,6 +20,8 @@ public class RandomTests {
 
     private static final Logger log = Logger.getLogger(RandomTests.class.getName());
 
+    FileUtil fileUtil = new FileUtil();
+
     @Test
     void seeIfCertainCharactersArentInData() throws IOException {
         /*
@@ -27,7 +30,7 @@ public class RandomTests {
 
          */
 
-        byte[] bytes = FileUtil.readBytes("db/Order/Order.csv");
+        byte[] bytes = fileUtil.readBytes("db/Order/Order.csv");
 
         IntStream.range(0, bytes.length)
             .forEach( i -> {
@@ -149,7 +152,7 @@ public class RandomTests {
 
     @Test
     void deleteDirectory() throws IOException {
-        FileUtil.deleteDirectory("db" + "/Order");
+        fileUtil.deleteDirectory("db" + "/Order");
     }
 
 

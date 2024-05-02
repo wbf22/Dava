@@ -37,6 +37,9 @@ public class Batch {
     private Map<String, CountChange> numericCountFileChanges;
 
 
+    public FileUtil fileUtil = new FileUtil();
+
+
     public Batch() {
         this.usedTableEmtpies = new EmptiesPackage();
         this.rowsWritten = new ArrayList<>();
@@ -239,9 +242,10 @@ public class Batch {
      * - ID: invalidated index by row removal
      * - C: numeric count file change
      * - --: new batch
+     * - COMMIT: end of rollback
      */
     public String makeRollbackString(Table<?> table, String partition) {
-        StringBuilder builder = new StringBuilder("--\n");
+        StringBuilder builder = new StringBuilder();
 
 
         // for rolling back rows added to the table
@@ -332,7 +336,7 @@ public class Batch {
             builder.append("\n");
         });
 
-
+        builder.append("--\n");
 
         return builder.toString();
     }
@@ -354,7 +358,7 @@ public class Batch {
             .toList();
 
         try {
-            FileUtil.writeBytesIfPossible(
+            fileUtil.writeBytesIfPossible(
                 table.getTablePath(partition),
                 whitespacePackagesFromEmtpies
             );
@@ -364,7 +368,7 @@ public class Batch {
                 if (empties != null)
                     emptyRoutes.addAll( empties );
 
-                FileUtil.writeBytes(
+                fileUtil.writeBytes(
                     table.emptiesFilePath(partition),
                     8L,
                     ArrayUtil.appendArrays(
@@ -393,7 +397,7 @@ public class Batch {
                         .toList()
                 );
 
-                FileUtil.replaceFile(
+                fileUtil.replaceFile(
                     indexPath,
                     routes.stream().map(route -> new WritePackage(
                         route.getOffsetInTable(),
@@ -402,8 +406,8 @@ public class Batch {
                     .toList()
                 );
 
-                if (FileUtil.fileSize(indexPath) == 0)
-                    FileUtil.deleteFile(indexPath);
+                if (fileUtil.fileSize(indexPath) == 0)
+                    fileUtil.deleteFile(indexPath);
 
             } catch (IOException e) {
                 throw new DavaException(ROLLBACK_ERROR, "Error updating indices undoing insert", e);
@@ -413,7 +417,7 @@ public class Batch {
         // delete actual inserted rows from table
         try {
             if (table.getMode() != Mode.LIGHT) {
-                FileUtil.writeBytesIfPossible(
+                fileUtil.writeBytesIfPossible(
                     table.getTablePath(partition),
                     rowsWritten.stream()
                         .map(RowWritePackage::getRoute)
@@ -460,9 +464,9 @@ public class Batch {
                     offset += bytes.length;
                 }
 
-                FileUtil.deleteFile(table.getTablePath(partition));
+                fileUtil.deleteFile(table.getTablePath(partition));
 
-                FileUtil.writeBytes(
+                fileUtil.writeBytes(
                     table.getTablePath(partition),
                     writePackages
                 );
@@ -483,10 +487,10 @@ public class Batch {
         try {
             if (table.getMode() == Mode.LIGHT) { // if it's light mode we need to put a new line on the end
                 String tablePath = table.getTablePath(partition);
-                // FileUtil.writeBytes(tablePath, FileUtil.fileSize(tablePath), "\n".getBytes(StandardCharsets.UTF_8));
+                // fileUtil.writeBytes(tablePath, fileUtil.fileSize(tablePath), "\n".getBytes(StandardCharsets.UTF_8));
             }
             AtomicReference<Long> offset = new AtomicReference<>(
-                FileUtil.fileSize(table.getTablePath(partition))
+                fileUtil.fileSize(table.getTablePath(partition))
             );
             List<WritePackage> writePackages = rows.stream()
                 .map(row -> {
@@ -506,7 +510,7 @@ public class Batch {
                 })
                 .toList();
 
-            FileUtil.writeBytes(
+            fileUtil.writeBytes(
                 table.getTablePath(partition),
                 writePackages
             );
@@ -521,7 +525,7 @@ public class Batch {
         }
         if (oldEmptiesSize != null) {
             try {
-                FileUtil.truncate(table.emptiesFilePath(partition), oldEmptiesSize);
+                fileUtil.truncate(table.emptiesFilePath(partition), oldEmptiesSize);
             } catch (IOException e) {
                 throw new DavaException(ROLLBACK_ERROR, "Error rolling back empties file after failed delete", e);
             }
@@ -537,7 +541,7 @@ public class Batch {
                     indexDelete.getOriginalRoutes()
                 );
 
-                FileUtil.replaceFile(
+                fileUtil.replaceFile(
                     indexPath,
                     routes.stream().map(route -> new WritePackage(
                         route.getOffsetInTable(),

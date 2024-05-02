@@ -1,4 +1,4 @@
-package org.dava.core.database.service.fileaccess;
+package org.dava.core.database.service.fileaccess.deprecated;
 
 import org.dava.core.database.service.operations.common.WritePackage;
 import org.dava.core.database.service.type.compression.TypeToByteUtil;
@@ -11,67 +11,89 @@ import java.util.*;
 
 public class FileUtil {
 
+    public static Cache cache = new Cache();
 
 
-    public void writeObjectToFile(String destinationPath, Object object) throws IOException {
+
+
+    private FileUtil() {}
+
+
+    public static void invalidateCache() {
+        cache.invalidateCacheAll();
+    }
+
+
+    public static void writeObjectToFile(String destinationPath, Object object) throws IOException {
         try ( ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(destinationPath)) ) {
             oos.writeObject(object);
         }
 
-        
+        cache.invalidateCacheAll(); // for directory listing
     }
 
-    public <T> T readObjectFromFile(String filePath, Class<T> objectType) throws IOException {
-        T object = null;
-        try ( ObjectInputStream ois = new ObjectInputStream(new FileInputStream(filePath)); ) {
-            Object obj = ois.readObject();
-            if (objectType.isInstance(obj)) {
-                object = objectType.cast(obj);
+    public static <T> T readObjectFromFile(String filePath, Class<T> objectType) throws IOException {
+
+        return cache.get(filePath, Cache.hash("readObjectFromFile", objectType), () -> {
+            T object = null;
+            try ( ObjectInputStream ois = new ObjectInputStream(new FileInputStream(filePath)); ) {
+                Object obj = ois.readObject();
+                if (objectType.isInstance(obj)) {
+                    object = objectType.cast(obj);
+                }
+
+            } catch (ClassNotFoundException e) {
+                throw new RuntimeException(e);
             }
-
-        } catch (ClassNotFoundException e) {
-            throw new RuntimeException(e);
-        }
-        return object;
+            return object;
+        });
     }
 
 
-    public String readFile(String filePath) throws IOException {
-        return new String(readBytes(filePath), StandardCharsets.UTF_8);
+    public static String readFile(String filePath) throws IOException {
+        return cache.get(filePath, Cache.hash("readFile"), () ->
+            new String(readBytes(filePath), StandardCharsets.UTF_8)
+        );
     }
 
-    public byte[] readBytes(String filePath) throws IOException {
+    public static byte[] readBytes(String filePath) throws IOException {
 
-        File file = new File(filePath);
+        return cache.get(filePath, Cache.hash("readBytes"), () -> {
+            File file = new File(filePath);
 
-        FileInputStream fileInputStream = new FileInputStream(file);
+            FileInputStream fileInputStream = new FileInputStream(file);
 
-        byte[] fileContent = fileInputStream.readAllBytes();
-        fileInputStream.close();
+            byte[] fileContent = fileInputStream.readAllBytes();
+            fileInputStream.close();
 
-        return fileContent;
+            return fileContent;
+        });
     }
 
-    public String readFile(String filePath, long startByte, int numBytes) throws IOException {
+    public static String readFile(String filePath, long startByte, int numBytes) throws IOException {
 
-        byte[] bytes = readBytes(filePath, startByte, numBytes);
-        return (bytes != null)? new String(bytes, StandardCharsets.UTF_8) : null;
+        return cache.get(filePath, Cache.hash("readFile", startByte, numBytes), () -> {
+            byte[] bytes = readBytes(filePath, startByte, numBytes);
+            return (bytes != null)? new String(bytes, StandardCharsets.UTF_8) : null;
+        });
     }
 
-    public byte[] readBytes(String filePath, long startByte, Integer numBytes) throws IOException {
-        try (RandomAccessFile raf = new RandomAccessFile(filePath, "r")) {
-            raf.seek(startByte); // Set the file pointer to the desired position
+    public static byte[] readBytes(String filePath, long startByte, Integer numBytes) throws IOException {
+        return cache.get(filePath, Cache.hash("readBytes", startByte, numBytes), () -> {
+            try (RandomAccessFile raf = new RandomAccessFile(filePath, "r")) {
+                raf.seek(startByte); // Set the file pointer to the desired position
 
-            int bytesToRead = (numBytes == null)? (int) raf.length() : numBytes;
-            byte[] buffer = new byte[bytesToRead];
-            int bytesRead = raf.read(buffer); // Read the specified number of bytes
+                int bytesToRead = (numBytes == null)? (int) raf.length() : numBytes;
+                byte[] buffer = new byte[bytesToRead];
+                int bytesRead = raf.read(buffer); // Read the specified number of bytes
 
-            return (bytesRead != -1)? buffer : null;
-        }
+                return (bytesRead != -1)? buffer : null;
+            }
+        });
 
     }
 
-    public List<Object> readBytes(String filePath, List<Long> startBytes, List<Long> numBytes) throws IOException {
+    public static List<Object> readBytes(String filePath, List<Long> startBytes, List<Long> numBytes) throws IOException {
 
         try (RandomAccessFile raf = new RandomAccessFile(filePath, "r")) {
 
@@ -81,9 +103,14 @@ public class FileUtil {
 
                 Long num = numBytes.get(i);
 
-                byte[] buffer = new byte[ Math.toIntExact(num) ];
-                int bytesRead = raf.read(buffer); // Read the specified number of bytes
-                Object readBytes = (bytesRead != -1)? buffer : null;
+                // read bytes going through cache
+                Object readBytes = cache.get(filePath, Cache.hash("readBytes", startBytes.get(i), num), () -> {
+
+                    byte[] buffer = new byte[ Math.toIntExact(num) ];
+                    int bytesRead = raf.read(buffer); // Read the specified number of bytes
+                    return (bytesRead != -1)? buffer : null;
+
+                });
 
                 reads.add(
                     readBytes
@@ -96,28 +123,32 @@ public class FileUtil {
 
     }
 
-    public String readLine(String filePath, long startByte) throws IOException {
-        RandomAccessFile raf = new RandomAccessFile(filePath, "r");
-        raf.seek(startByte); // Set the file pointer to the desired position
+    public static String readLine(String filePath, long startByte) throws IOException {
+        return cache.get(filePath, Cache.hash("readLine", startByte), () -> {
+            RandomAccessFile raf = new RandomAccessFile(filePath, "r");
+            raf.seek(startByte); // Set the file pointer to the desired position
 
-        String data = raf.readLine();
+            String data = raf.readLine();
 
-        raf.close();
+            raf.close();
 
-        return data;
+            return data;
+        });
     }
 
-    public void writeFile(String desitnationPath, String fileContents) throws IOException {
+    public static void writeFile(String desitnationPath, String fileContents) throws IOException {
 
         FileOutputStream fileOutputStream;
         fileOutputStream = new FileOutputStream(desitnationPath);
 
         fileOutputStream.write(fileContents.getBytes(StandardCharsets.UTF_8));
         fileOutputStream.close();
-        
+
+        cache.invalidate(desitnationPath);
+        cache.invalidateCacheAll(); // for directory listing
     }
 
-    public void writeBytes(String filePath, long position, byte[] data) throws IOException {
+    public static void writeBytes(String filePath, long position, byte[] data) throws IOException {
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             // Move to the desired position in the file
@@ -126,9 +157,11 @@ public class FileUtil {
             // Write data at the current position
             file.write(data);
         }
+
+        cache.invalidate(filePath);
     }
 
-    public void changeCount(String filePath, long position, long change, int countByteLength) throws IOException {
+    public static void changeCount(String filePath, long position, long change, int countByteLength) throws IOException {
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             // Move to the desired position in the file
@@ -146,13 +179,15 @@ public class FileUtil {
             file.seek(position);
             file.write(newCountbytes);
         }
+
+        cache.invalidate(filePath);
     }
 
     /**
      * writes the writePackages.
      * Also updates null offsets in packages to the end of the table at insert
      */
-    public void writeBytes(String filePath, List<WritePackage> writePackages) throws IOException {
+    public static void writeBytes(String filePath, List<WritePackage> writePackages) throws IOException {
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             writePackages.forEach( writePackage -> {
@@ -169,6 +204,8 @@ public class FileUtil {
                     }
                 });
         }
+
+        cache.invalidate(filePath);
     }
 
 
@@ -176,7 +213,7 @@ public class FileUtil {
      * writes the writePackages if they are within the length of the file
      * Also updates null offsets in packages to the end of the table at insert
      */
-    public void writeBytesIfPossible(String filePath, List<WritePackage> writePackages) throws IOException {
+    public static void writeBytesIfPossible(String filePath, List<WritePackage> writePackages) throws IOException {
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             long fileSize = file.length();
@@ -197,33 +234,41 @@ public class FileUtil {
                 }
             });
         }
+
+        cache.invalidate(filePath);
     }
 
-    public void writeFileAppend(String filePath, String data) throws IOException {
+    public static void writeFileAppend(String filePath, String data) throws IOException {
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             file.seek(file.length());
             file.write(data.getBytes());
         }
+
+        cache.invalidate(filePath);
     }
 
-    public void writeBytesAppend(String filePath, byte[] data) throws IOException {
+    public static void writeBytesAppend(String filePath, byte[] data) throws IOException {
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             file.seek(file.length());
             file.write(data);
         }
+
+        cache.invalidate(filePath);
     }
 
-    public void replaceFile(String filePath, byte[] data) throws IOException {
+    public static void replaceFile(String filePath, byte[] data) throws IOException {
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             file.setLength( 0 );
             file.write(data);
         }
+
+        cache.invalidate(filePath);
     }
 
-    public void replaceFile(String filePath, List<WritePackage> writePackages) throws IOException {
+    public static void replaceFile(String filePath, List<WritePackage> writePackages) throws IOException {
 
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             file.setLength( 0 );
@@ -241,21 +286,27 @@ public class FileUtil {
                 }
             });
         }
+
+        cache.invalidate(filePath);
     }
 
-    public void truncate(String filePath, Long newSizeInBytes) throws IOException {
+    public static void truncate(String filePath, Long newSizeInBytes) throws IOException {
         try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
             file.setLength( newSizeInBytes );
         }
+
+        cache.invalidate(filePath);
     }
 
-    public void createDirectoriesIfNotExist(String directoryPath) throws IOException {
+    public static void createDirectoriesIfNotExist(String directoryPath) throws IOException {
 
         Path path = Paths.get(directoryPath);
         Files.createDirectories(path);
+
+        cache.invalidateCacheAll(); // for directory listing
     }
 
-    public void moveFilesToDirectory(List<File> sourceFiles, String destinationDirectory) throws IOException {
+    public static void moveFilesToDirectory(List<File> sourceFiles, String destinationDirectory) throws IOException {
 
         File destinationDir = new File(destinationDirectory);
         if (!destinationDir.exists()) {
@@ -272,10 +323,10 @@ public class FileUtil {
             Files.move(sourcePath, destinationPath, StandardCopyOption.REPLACE_EXISTING);
         }
 
-        
+        cache.invalidateCacheAll(); // for directory listing
     }
 
-    public void copyFilesToDirectory(List<File> sourceFiles, String destinationDirectory) throws IOException {
+    public static void copyFilesToDirectory(List<File> sourceFiles, String destinationDirectory) throws IOException {
 
         File destinationDir = new File(destinationDirectory);
         if (!destinationDir.exists()) {
@@ -292,26 +343,26 @@ public class FileUtil {
             Files.copy(sourcePath, destinationPath, StandardCopyOption.REPLACE_EXISTING);
         }
 
-        
+        cache.invalidateCacheAll(); // for directory listing
     }
 
-    public boolean createFile(String filePath) throws IOException {
-        
+    public static boolean createFile(String filePath) throws IOException {
+        cache.invalidateCacheAll(); // for directory listing
         return new File(filePath).createNewFile();
     }
 
-    public boolean createFile(String filePath, byte[] content) throws IOException {
+    public static boolean createFile(String filePath, byte[] content) throws IOException {
 
         File newFile = new File(filePath);
         boolean success = newFile.createNewFile();
         writeBytes(filePath, 0, content);
 
 
-        
+        cache.invalidateCacheAll(); // for directory listing
         return success;
     }
 
-    public boolean renameFile(String oldFilePath, String newFilePath) {
+    public static boolean renameFile(String oldFilePath, String newFilePath) {
 
         File oldFile = new File(oldFilePath);
         File newFile = new File(newFilePath);
@@ -321,22 +372,25 @@ public class FileUtil {
             success = oldFile.renameTo(newFile);
         }
 
-        
+        cache.invalidateCacheAll(); // for directory listing
         return success;
     }
 
-    public boolean exists(String filePath) {
-        File file = new File(filePath);
-        return file.exists();
+    public static boolean exists(String filePath) {
+        return cache.get(filePath, Cache.hash("exists"), () -> {
+            File file = new File(filePath);
+            return file.exists();
+        });
     }
 
-    public Long fileSize(String filePath) {
-        
-        File file = new File(filePath);
-        return file.length();
+    public static Long fileSize(String filePath) {
+        return cache.get(filePath, Cache.hash("fileSize"), () -> {
+            File file = new File(filePath);
+            return file.length();
+        });
     }
 
-    public long popBytes(String filePath, int bytesToPop, List<Long> startBytes) throws IOException { //, boolean setFirst8BytesAsSizeOfThisFile
+    public static long popBytes(String filePath, int bytesToPop, List<Long> startBytes) throws IOException { //, boolean setFirst8BytesAsSizeOfThisFile
 
         File file = new File(filePath);
         startBytes.sort(Long::compareTo);
@@ -371,11 +425,12 @@ public class FileUtil {
 
             }
 
+            cache.invalidate(filePath);
             return raf.length();
         }
     }
 
-    public boolean deleteFile(String filePath) throws IOException {
+    public static boolean deleteFile(String filePath) throws IOException {
 
         boolean success = false;
         if (exists(filePath)) {
@@ -386,19 +441,19 @@ public class FileUtil {
             }
         }
 
-        
+        cache.invalidateCacheAll(); // for directory listing
         return success;
     }
 
-    public boolean deleteFile(File file) throws IOException {
+    public static boolean deleteFile(File file) throws IOException {
 
         boolean success = file.delete();
 
-        
+        cache.invalidateCacheAll(); // for directory listing
         return success;
     }
 
-    public void deleteDirectory(String directoryPath) throws IOException {
+    public static void deleteDirectory(String directoryPath) throws IOException {
 
         Path path = Paths.get(directoryPath);
         Files.walkFileTree(path, EnumSet.noneOf(FileVisitOption.class), Integer.MAX_VALUE, new FileVisitor<>() {
@@ -421,7 +476,7 @@ public class FileUtil {
             @Override
             public FileVisitResult visitFileFailed(Path path, IOException e) { return FileVisitResult.CONTINUE; }
         });
-        
+        cache.invalidateCacheAll(); // for directory listing
     }
 
 
@@ -431,48 +486,56 @@ public class FileUtil {
                 decide if we should be smarter about which cache entries to invalidate.
      */
 
-    public File[] listFiles(String path) {
-        return new File(path).listFiles();
+    public static File[] listFiles(String path) {
+        return cache.get(path, Cache.hash("listFiles"), () ->
+            new File(path).listFiles()
+        );
     }
 
-    public File[] listFilesIfDirectory(String path) {
-        File file = new File(path);
-        if (file.isDirectory()) {
-            return file.listFiles();
-        }
-        return null;
+    public static File[] listFilesIfDirectory(String path) {
+        return cache.get(path, Cache.hash("listFilesIfDirectory"), () -> {
+            File file = new File(path);
+            if (file.isDirectory()) {
+                return file.listFiles();
+            }
+            return null;
+        });
     }
 
-    public List<File> getSubFolders(String path) {
-        
-        File[] files = listFiles(path);
-        if (files != null && files.length > 0) {
-            return Arrays.stream(files)
-                .filter(File::isDirectory)
-                .toList();
-        }
-        return new ArrayList<>();
+    public static List<File> getSubFolders(String path) {
+        return cache.get(path, Cache.hash("getSubFolders"), () -> {
+            File[] files = FileUtil.listFiles(path);
+            if (files != null && files.length > 0) {
+                return Arrays.stream(files)
+                    .filter(File::isDirectory)
+                    .toList();
+            }
+            return new ArrayList<>();
+        });
     }
 
-    public List<File> getSubFiles(String path) {
-        
-        File[] files = listFiles(path);
-        if (files != null && files.length > 0) {
-            return Arrays.stream(files)
-                .filter(File::isFile)
-                .toList();
-        }
-        return new ArrayList<>();
+    public static List<File> getSubFiles(String path) {
+        return cache.get(path, Cache.hash("getSubFiles"), () -> {
+            File[] files = FileUtil.listFiles(path);
+            if (files != null && files.length > 0) {
+                return Arrays.stream(files)
+                    .filter(File::isFile)
+                    .toList();
+            }
+            return new ArrayList<>();
+        });
     }
 
-    public List<File> getLeafFolders(String directory) {
+    public static List<File> getLeafFolders(String directory) {
         List<File> leaves = new ArrayList<>();
         List<File> files = List.of(new File(directory));
         do {
             files = files.parallelStream()
                 .flatMap( file -> {
                     List<File> subFiles = Arrays.stream(
-                        file.listFiles()
+                        cache.get(file.getPath(), Cache.hash("listFiles"), () ->
+                            file.listFiles()
+                        )
                     ).filter(File::isDirectory)
                     .toList();
 
@@ -488,10 +551,12 @@ public class FileUtil {
         return leaves;
     }
 
-    public List<File> getSubFoldersRecursive(String directory) {
+    public static List<File> getSubFoldersRecursive(String directory) {
 
         List<File> newFiles = Arrays.stream(
-            new File(directory).listFiles()
+            cache.get(directory, Cache.hash("listFiles"), () ->
+                new File(directory).listFiles()
+            )
         ).filter(File::isDirectory)
         .toList();
 
@@ -501,7 +566,9 @@ public class FileUtil {
             newFiles = newFiles.parallelStream()
                 .flatMap(file ->
                     Arrays.stream(
-                        file.listFiles()
+                        cache.get(file.getPath(), Cache.hash("listFiles"), () ->
+                            file.listFiles()
+                        )
                     )
                 )
                 .filter(File::isDirectory)
@@ -513,16 +580,17 @@ public class FileUtil {
         return files;
     }
 
-    public long getSubFilesAndFolderCount(String directory) throws IOException {
-        
-        Path dir = Paths.get(directory);
-        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
-            int count = 0;
-            for (Path ignored : stream) {
-                count++;
+    public static long getSubFilesAndFolderCount(String directory) throws IOException {
+        return cache.get(directory, Cache.hash("getSubFilesAndFolderCount"), () -> {
+            Path dir = Paths.get(directory);
+            try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir)) {
+                int count = 0;
+                for (Path ignored : stream) {
+                    count++;
+                }
+                return count;
             }
-            return count;
-        }
+        });
 
 
     }

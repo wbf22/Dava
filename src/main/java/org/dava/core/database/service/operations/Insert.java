@@ -28,6 +28,8 @@ public class Insert {
     private long tableSize;
     private String partition;
 
+    public FileUtil fileUtil = new FileUtil();
+
 //    private Logger log = Logger.getLogger(Insert.class.getName());
 
     private EmptiesPackage rowEmpties;
@@ -35,7 +37,7 @@ public class Insert {
     public Insert(Database database, Table<?> table, String partition) {
         this.database = database;
         this.table = table;
-        this.tableSize = FileUtil.fileSize(table.getTablePath(partition));
+        this.tableSize = fileUtil.fileSize(table.getTablePath(partition));
         this.partition = partition;
     }
 
@@ -90,9 +92,9 @@ public class Insert {
         try {
             
             if (replaceRollbackFile)
-                FileUtil.replaceFile(rollbackLogPath, logString.getBytes(StandardCharsets.UTF_8) );
+                fileUtil.replaceFile(rollbackLogPath, logString.getBytes(StandardCharsets.UTF_8) );
             else
-                FileUtil.writeBytesAppend(rollbackLogPath, logString.getBytes(StandardCharsets.UTF_8) );
+                fileUtil.writeBytesAppend(rollbackLogPath, logString.getBytes(StandardCharsets.UTF_8) );
         } catch (IOException e) {
             throw new DavaException(ROLLBACK_ERROR, "Error writing to rollback log", e);
         }
@@ -258,7 +260,7 @@ public class Insert {
                     String indexPath = Index.indexPathBypass(folderPath, value);
 
                     // determine if we're planning on making new indices in a numeric repartition
-                    if ( Index.isNumericallyIndexed(column.getType()) && !FileUtil.exists(indexPath) && !countedIndexPaths.contains(indexPath)) {
+                    if ( Index.isNumericallyIndexed(column.getType()) && !fileUtil.exists(indexPath) && !countedIndexPaths.contains(indexPath)) {
                         CountChange count = countUpdates.get(folderPath);
                         countUpdates.put(
                             folderPath,
@@ -305,7 +307,7 @@ public class Insert {
         String path = table.getTablePath(partition);
         try {
 
-            FileUtil.writeBytes(
+            fileUtil.writeBytes(
                 path,
                 (List<WritePackage>) (List<?>) writePackages
             );

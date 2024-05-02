@@ -28,6 +28,8 @@ public class Delete {
     private final Database database;
     private final Table<?> table;
 
+    public FileUtil fileUtil = new FileUtil();
+
     public Delete(Database database, Table<?> table) {
         this.database = database;
         this.table = table;
@@ -58,7 +60,7 @@ public class Delete {
                 batch.setOldTableSize(tableSize);
 
                 // determine old table empties file size
-                long emptiesSize = FileUtil.fileSize(table.emptiesFilePath(partition));
+                long emptiesSize = fileUtil.fileSize(table.emptiesFilePath(partition));
                 batch.setOldEmptiesSize(emptiesSize);
 
 
@@ -83,9 +85,9 @@ public class Delete {
                 String rollback = batch.makeRollbackString(table, partition);
 
                 if (replaceRollbackFile)
-                    FileUtil.replaceFile(table.getRollbackPath(partition), rollback.getBytes() );
+                    fileUtil.replaceFile(table.getRollbackPath(partition), rollback.getBytes() );
                 else
-                    FileUtil.writeBytesAppend(table.getRollbackPath(partition), rollback.getBytes() );
+                    fileUtil.writeBytesAppend(table.getRollbackPath(partition), rollback.getBytes() );
 
             } catch (IOException e) {
                 throw new DavaException(ROLLBACK_ERROR, "Error writing to rollback log", e);
@@ -119,12 +121,12 @@ public class Delete {
         });
 
         try {
-            FileUtil.writeBytes(
+            fileUtil.writeBytes(
                 table.getTablePath(partition),
                 overwritePackages
             );
 
-            FileUtil.writeBytesAppend(
+            fileUtil.writeBytesAppend(
                 table.emptiesFilePath(partition),
                 ArrayUtil.appendArrays(emptiesWrites, 10)
             );
@@ -142,9 +144,9 @@ public class Delete {
                     String indexPath = entry.getKey();
                     IndexDelete indexDelete = entry.getValue();
 
-                    long newSize = FileUtil.popBytes(indexPath, 10, indexDelete.getIndicesToDelete());
+                    long newSize = fileUtil.popBytes(indexPath, 10, indexDelete.getIndicesToDelete());
                     if (newSize == 0)
-                        FileUtil.deleteFile(indexPath); // this is important as during rollbacks table counts are updated by the number of primary key index files
+                        fileUtil.deleteFile(indexPath); // this is important as during rollbacks table counts are updated by the number of primary key index files
 
                 } catch (IOException e) {
                     throw new DavaException(BASE_IO_ERROR, "Error updating indices after delete", e);
@@ -183,12 +185,12 @@ public class Delete {
         // delete the old file and write all rows back
         String tablePath = table.getTablePath(partition);
         try {
-            FileUtil.deleteFile(tablePath);
+            fileUtil.deleteFile(tablePath);
 
             table.initTableCsv(partition);
 
-            long offset = FileUtil.fileSize(tablePath);
-            FileUtil.writeBytes(tablePath, offset, rows.getBytes(StandardCharsets.UTF_8));
+            long offset = fileUtil.fileSize(tablePath);
+            fileUtil.writeBytes(tablePath, offset, rows.getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
             throw new DavaException(BASE_IO_ERROR, "Failed trying to delete and recreate table", e);
         }

@@ -21,8 +21,7 @@ public class Database {
 
 
     public Database(String rootDirectory, List<Class<?>> tableClasses, List<Mode> tableModes) {
-        FileUtil.invalidateCache(); // if you make a database on resources that already exist and have been cached, the cache won't function properly
-
+        
         this.rootDirectory = rootDirectory;
         this.tables = IntStream.range(0, tableClasses.size())
             .mapToObj(i -> new Table<>(tableClasses.get(i), rootDirectory, tableModes.get(i), 0L))
@@ -30,8 +29,7 @@ public class Database {
     }
 
     public Database(String rootDirectory, List<Class<?>> tableClasses, List<Mode> tableModes, long seed) {
-        FileUtil.invalidateCache(); // if you make a database on resources that already exist and have been cached, the cache won't function properly
-
+        
         this.rootDirectory = rootDirectory;
         this.tables = IntStream.range(0, tableClasses.size())
             .mapToObj(i -> new Table<>(tableClasses.get(i), rootDirectory, tableModes.get(i), seed))

@@ -18,6 +18,8 @@ import static org.dava.core.database.objects.exception.ExceptionType.ROLLBACK_ER
 
 public class Rollback {
 
+    public static FileUtil fileUtil = new FileUtil();
+
 
     public void rollback(Table<?> table, String partition, String rollbackPath) {
         List<Batch> batches = parse(rollbackPath, table, partition);
@@ -39,13 +41,14 @@ public class Rollback {
             List<String> batches = new ArrayList<>( 
                 List.of(
                     new String(
-                        FileUtil.readBytes(rollbackPath), StandardCharsets.UTF_8
+                        fileUtil.readBytes(rollbackPath), StandardCharsets.UTF_8
                     ).split("--")
                 )
             );
 
-            // remove the first empty value from the split
-            batches.remove(0);
+            // remove the last empty value from the split
+            // (this also ensure that failures during logging the rollback string are not attempted to rollback)
+            batches.remove(batches.size()-1);
 
             return batches.stream()
                 .map( batchString -> {
@@ -68,7 +71,7 @@ public class Rollback {
         try {
             lines = List.of(
                 new String(
-                    FileUtil.readBytes(table.getNumericRollbackPath(partition)), StandardCharsets.UTF_8
+                    fileUtil.readBytes(table.getNumericRollbackPath(partition)), StandardCharsets.UTF_8
                 ).split("\n")
             );
         } catch (IOException e) {
@@ -78,7 +81,7 @@ public class Rollback {
         try {
             for (String line : lines) {
                 String folderPath = line.split(":")[1];
-                File[] files = FileUtil.listFiles(folderPath);
+                File[] files = fileUtil.listFiles(folderPath);
                 List<File> filesInNewPartitions = new ArrayList<>();
                 List<File> filesInCurrent = new ArrayList<>();
                 List<File> directories = new ArrayList<>();
@@ -89,7 +92,7 @@ public class Rollback {
                     else {
                         directories.add(file);
                         filesInNewPartitions.addAll(
-                            List.of(FileUtil.listFiles(file.getPath()))
+                            List.of(fileUtil.listFiles(file.getPath()))
                         );
                     }
                 }
@@ -103,15 +106,15 @@ public class Rollback {
                 }
                 else if (filesInNewPartitions.size() >= filesInCurrent.size() + 1) {
                     for (File file : filesInCurrent) {
-                        FileUtil.deleteFile(file);
+                        fileUtil.deleteFile(file);
                     }
                 }
                 else {
                     for (File file : filesInNewPartitions) {
-                        FileUtil.deleteFile(file);
+                        fileUtil.deleteFile(file);
                     }
                     for (File file : directories) {
-                        FileUtil.deleteFile(file);
+                        fileUtil.deleteFile(file);
                     }
                 }
             }

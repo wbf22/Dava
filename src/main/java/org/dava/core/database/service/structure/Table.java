@@ -35,10 +35,11 @@ public class Table<T> {
     private Map<String, List<File>> columnLeaves = new HashMap<>(); // for numeric folders
 
 
+    public FileUtil fileUtil = new FileUtil();
+
 
     public Table(Class<T> tableClass, String databaseRoot, Mode mode, long seed) {
-        FileUtil.invalidateCache();  // making sure cache hasn't cached anything from file with the same names
-
+        
         this.tableClass = tableClass;
         org.dava.api.annotations.Table annotation = Optional.ofNullable(
             tableClass.getAnnotation( org.dava.api.annotations.Table.class )
@@ -80,14 +81,14 @@ public class Table<T> {
                 partitions.forEach( partition -> {
                     String indexPath = Index.buildColumnPath(databaseRoot, tableName, partition, name);
                     try {
-                        List<File> subDirs = FileUtil.getSubFolders(indexPath);
+                        List<File> subDirs = fileUtil.getSubFolders(indexPath);
                         columnLeaves.put(partition + name, subDirs);
 
                         if (subDirs.isEmpty()) {
                             // make count file if doesn't exist
-                            FileUtil.createDirectoriesIfNotExist(indexPath);
-                            if (!FileUtil.exists(indexPath + "/c.count"))
-                                FileUtil.createFile(indexPath + "/c.count", TypeToByteUtil.longToByteArray(0L));
+                            fileUtil.createDirectoriesIfNotExist(indexPath);
+                            if (!fileUtil.exists(indexPath + "/c.count"))
+                                fileUtil.createFile(indexPath + "/c.count", TypeToByteUtil.longToByteArray(0L));
                         }
 
                     } catch (IOException e) {
@@ -104,12 +105,12 @@ public class Table<T> {
         // make empties file and rollback log
         try {
             String folder = indicesFolder(tableName);
-            FileUtil.createDirectoriesIfNotExist(folder);
+            fileUtil.createDirectoriesIfNotExist(folder);
 
             if (mode != Mode.LIGHT)
                 makeEmptiesFileIfDoesntExist(tableName);
 
-            FileUtil.createFile( getRollbackPath(tableName) );
+            fileUtil.createFile( getRollbackPath(tableName) );
 
         } catch (IOException e) {
             throw new DavaException(
@@ -134,12 +135,12 @@ public class Table<T> {
         try {
             String path = getTablePath(partition);
 
-            if (!FileUtil.exists(path)) {
+            if (!fileUtil.exists(path)) {
 
                 // write column titles
                 String columnTitles = makeColumnTitles();
                 byte[] bytes = columnTitles.getBytes(StandardCharsets.UTF_8);
-                FileUtil.writeBytes(
+                fileUtil.writeBytes(
                     path,
                     0,
                     bytes
@@ -171,7 +172,7 @@ public class Table<T> {
             columns.values().forEach( column -> {
                 String indexPath = Index.buildColumnPath(databaseRoot, tableName, partition, column.getName());
 
-                List<File> subDirs = FileUtil.getLeafFolders(indexPath);
+                List<File> subDirs = fileUtil.getLeafFolders(indexPath);
                 columnLeaves.put(partition + column.getName(), subDirs);
             });
         });
@@ -225,8 +226,8 @@ public class Table<T> {
         String folder = indicesFolder(partition);
 
         String path = folder + "/" + partition + ".empties";
-        if ( !FileUtil.exists( path ) ) {
-            FileUtil.writeBytes(
+        if ( !fileUtil.exists( path ) ) {
+            fileUtil.writeBytes(
                 path,
                 0,
                 TypeToByteUtil.longToByteArray(0L)
@@ -254,11 +255,11 @@ public class Table<T> {
     public long getSize(String partition) {
         try {
             if (mode == Mode.LIGHT) {
-                String tableFile = FileUtil.readFile(getTablePath(partition));
+                String tableFile = fileUtil.readFile(getTablePath(partition));
                 return tableFile.split("\n").length;
             }
             else {
-                byte[] bytes = FileUtil.readBytes(emptiesFilePath(partition), 0, 8);
+                byte[] bytes = fileUtil.readBytes(emptiesFilePath(partition), 0, 8);
                 return TypeToByteUtil.byteArrayToLong(bytes);
 
             }
@@ -277,7 +278,7 @@ public class Table<T> {
             return;
 
         try {
-            FileUtil.writeBytes(
+            fileUtil.writeBytes(
                 emptiesFilePath(partition),
                 0,
                 TypeToByteUtil.longToByteArray(newSize)

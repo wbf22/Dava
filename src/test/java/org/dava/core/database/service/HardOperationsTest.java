@@ -37,6 +37,9 @@ import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
 
@@ -51,10 +54,12 @@ class HardOperationsTest {
     static Long seed = -183502108378805369L;
     private static final Logger log = Logger.getLogger(HardOperationsTest.class.getName());
 
+    static FileUtil fileUtil = new FileUtil();
+
 
     static void setUpWipeAndPopulate(Mode tableMode) throws IOException {
-        if (FileUtil.exists(DB_ROOT + "/Order")) {
-            FileUtil.deleteDirectory(DB_ROOT + "/Order");
+        if (fileUtil.exists(DB_ROOT + "/Order")) {
+            fileUtil.deleteDirectory(DB_ROOT + "/Order");
         }
 
         seed = (seed == null)? new Random().nextLong() : seed;
@@ -130,6 +135,9 @@ class HardOperationsTest {
     }
 
 
+    /*
+     * Tests doing a delete and then some normal operations afterwards
+     */
     @ParameterizedTest
     @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
     void delete_and(Mode tableMode) throws IOException {
@@ -145,26 +153,6 @@ class HardOperationsTest {
             true
         );
         List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
-
-        // List<String> lines = BaseOperationService.getFileSizeAndRoutes(
-        //         "db/Order/META_Order/discount/4.index",
-        //         "Order",
-        //         0L,
-        //         null
-        //     ).getSecond().stream()
-        //     .map(route -> {
-        //         try {
-        //             return new String(
-        //                 FileUtil.readBytes(table.getTablePath("Order"), route.getOffsetInTable(), route.getLengthInTable()),
-        //                 StandardCharsets.UTF_8
-        //             );
-        //         } catch (IOException e) {
-        //             throw new RuntimeException(e);
-        //         }
-        //     })
-        //     .filter(line -> line.contains("order_86B122D"))
-        //     .toList();
-
 
         Delete delete = new Delete(database, table);
         delete.delete(rows, true);
@@ -196,6 +184,9 @@ class HardOperationsTest {
 
     }
 
+    /*
+     * Tests rollback with an insert fails when trying to add rows to a table
+     */
     @ParameterizedTest
     @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
     void rollback_insert_failure_during_addToTable(Mode tableMode) throws IOException {
@@ -207,10 +198,6 @@ class HardOperationsTest {
         long intialSize = table.getSize(partition);
 
 
-        // mock fileutil cache so we can through failures
-        Cache spyCache = Mockito.spy(new Cache());
-        FileUtil.cache = spyCache;
-        doThrow(DavaException.class).when(spyCache).invalidate(table.getTablePath(partition));
 
 
         // get all rows
@@ -224,14 +211,20 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
+
+        // mock fileutil so we can through failures
+        FileUtil spyFileUtil = Mockito.spy(new FileUtil());
+        insert.fileUtil = spyFileUtil;
+        doThrow(DavaException.class).when(spyFileUtil).writeBytes(
+                eq(table.getTablePath(partition)), 
+                anyList()
+            );
+
         try {
             insert.insert(rows, true);
         } catch (DavaException e) {
             log.trace("caught");
         }
-
-
-        FileUtil.cache = new Cache();
 
         // rollback
         Timer timer = Timer.start();
@@ -256,19 +249,15 @@ class HardOperationsTest {
         );
     }
 
+    /*
+     * Tests rollback with an inserts fails when trying to write to index files
+     */
     @ParameterizedTest
     @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
     void rollback_insert_failure_during_batchWriteToIndices(Mode tableMode) throws IOException {
         setUp(tableMode);
 
-        // mock fileutil cache so we can through failures
-        Cache spyCache = Mockito.spy(new Cache());
-        FileUtil.cache = spyCache;
-        doCallRealMethod()
-            .doCallRealMethod()
-            .doCallRealMethod()
-            .doThrow(DavaException.class).when(spyCache).invalidate(any());
-
+      
 
         Table<?> table = database.getTableByName("Order");
         String partition = table.getRandomPartition();
@@ -286,14 +275,25 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
+
+
+        // mock fileutil so we can through failures
+        FileUtil spyFileUtil = Mockito.spy(new FileUtil());
+        BaseOperationService.fileUtil = spyFileUtil;
+        doThrow(DavaException.class).when(spyFileUtil).writeBytes(
+            any(), 
+            anyList()
+        );
+
+
         try {
             insert.insert(rows, true);
         } catch (DavaException e) {
             log.trace("caught");
         }
 
+        BaseOperationService.fileUtil = new FileUtil();
 
-        FileUtil.cache = new Cache();
 
         // rollback
         Timer timer = Timer.start();
@@ -318,6 +318,9 @@ class HardOperationsTest {
         );
     }
 
+    /*
+     * Tests doing an insert delete insert combo ensuring the correct rows are present afterwards
+     */
     @ParameterizedTest
     @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
     void insert_delete_insert(Mode tableMode) throws IOException {
@@ -359,7 +362,7 @@ class HardOperationsTest {
         if (tableMode != Mode.LIGHT) {
             List<Route> allEmpties = BaseOperationService.getAllEmpties(table.emptiesFilePath(partition));
             assertNotNull(allEmpties);
-            byte[] tableBytes = FileUtil.readBytes(table.getTablePath(partition));
+            byte[] tableBytes = fileUtil.readBytes(table.getTablePath(partition));
             byte whiteSpace = " ".getBytes(StandardCharsets.UTF_8)[0];
             byte newLine = "\n".getBytes(StandardCharsets.UTF_8)[0];
             for(int i = 0; i < tableBytes.length; i++) {
@@ -381,6 +384,9 @@ class HardOperationsTest {
 
     }
 
+    /*
+     * Tests doing and insert and delete, and then doing a second insert which is rolled back
+     */
     @ParameterizedTest
     @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
 //    @ValueSource(strings = {"INDEX_ALL"})
@@ -438,39 +444,48 @@ class HardOperationsTest {
     // delete, insert using empties
     //
 
+    /*
+     * Speed test, to show the benefit of the cache
+     */
     @ParameterizedTest
     @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
 //    @ValueSource(strings = {"INDEX_ALL"})
     void repetitive_reads(Mode tableMode) throws IOException {
         setUp(tableMode);
 
-
         Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+
+
+        // do insert
+        int INSERT_ITERATIONS = 100;
+        List<Row> firstInsertRows = makeRows(seed + ITERATIONS, INSERT_ITERATIONS);
+        firstInsertRows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        Insert insert = new Insert(database, table, partition);
+        insert.insert(firstInsertRows, true);
+
+
+
+        // warm up
         OffsetDate date = OffsetDate.of(OffsetDateTime.now().minusYears(10).toString());
         Before<OffsetDate> before = new Before<>(
             "time",
             date,
             true
         );
-
-        // warm up
         for (int i = 0; i < 10; i++) {
             List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
         }
 
         Timer timer;
-
-        // with cache
-        timer = Timer.start();
-        for (int i = 0; i < 10; i++) {
-            List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
-        }
-        timer.printRestart();
+        int TEST_ITERATIONS = 100;
 
         // without using cache
+        log.info("Without Cache: ");
         timer = Timer.start();
-        for (int i = 0; i < 10; i++) {
-            FileUtil.invalidateCache();
+        for (int i = 0; i < TEST_ITERATIONS; i++) {
             List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
         }
         timer.printRestart();
@@ -481,6 +496,9 @@ class HardOperationsTest {
 
 
 
+    /*
+     * Test doing insert and delete in a single transaction and rolling everything back
+     */
     @ParameterizedTest
     @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
 //    @ValueSource(strings = {"LIGHT"})
@@ -531,6 +549,9 @@ class HardOperationsTest {
     }
 
 
+    /*
+     * Test rolling back insert that has a failure during a numeric repartition
+     */
     @ParameterizedTest
     @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
     void insert_fails_during_numeric_repartition(Mode tableMode) throws IOException {
@@ -540,21 +561,6 @@ class HardOperationsTest {
         Table<?> table = database.getTableByName("Order");
         String partition = table.getRandomPartition();
         long intialSize = table.getSize(partition);
-
-
-        // mock fileutil cache so we can through failures
-        Cache spyCache = Mockito.spy(new Cache());
-        FileUtil.cache = spyCache;
-        doCallRealMethod()
-            .doCallRealMethod()
-            .doCallRealMethod()
-            .doCallRealMethod()
-            .doCallRealMethod()
-            .doCallRealMethod()
-            .doThrow(DavaException.class)
-            .doCallRealMethod()
-            .when(spyCache).invalidateCacheAll();
-
 
         // get all rows
         List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
@@ -567,14 +573,20 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
+
+
+        // mock fileutil so we can through failures
+        FileUtil spyFileUtil = Mockito.spy(new FileUtil());
+        BaseOperationService.fileUtil = spyFileUtil;
+        doThrow(DavaException.class).when(spyFileUtil).deleteFile(
+            anyString()
+        );
+
         try {
             insert.insert(rows, true);
         } catch (DavaException e) {
             log.trace("caught");
         }
-
-
-        FileUtil.cache = new Cache();
 
         // rollback
         Timer timer = Timer.start();
@@ -600,6 +612,12 @@ class HardOperationsTest {
     }
 
 
+    /*
+     * Test with 2 inserts in a transaction, the second that has a failure during a 
+     * numeric repartition.
+     * 
+     * A rollback is then performed and everything is checked
+     */
     @ParameterizedTest
     @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
     // @ValueSource(strings = {"INDEX_ALL"})
@@ -624,36 +642,29 @@ class HardOperationsTest {
         Insert insert = new Insert(database, table, partition);
         insert.insert(firstInsertRows, true);
 
-
-
-        // mock fileutil cache so we can through failures
-        Cache spyCache = Mockito.spy(new Cache());
-        FileUtil.cache = spyCache;
-        doCallRealMethod()
-            .doCallRealMethod()
-            .doCallRealMethod()
-            .doCallRealMethod()
-            .doCallRealMethod()
-            .doCallRealMethod()
-            .doThrow(DavaException.class)
-            .doCallRealMethod()
-            .when(spyCache).invalidateCacheAll();
-
-
         // do insert
         List<Row> rows = makeRows(seed + ITERATIONS + ITERATIONS, INSERT_ITERATIONS);
         rows.forEach(row -> {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert2 = new Insert(database, table, partition);
+
+
+        // mock fileutil so we can through failures
+        FileUtil spyFileUtil = Mockito.spy(new FileUtil());
+        insert2.fileUtil = spyFileUtil;
+        doCallRealMethod()
+            .doThrow(DavaException.class).when(spyFileUtil).copyFilesToDirectory(
+                any(),
+                any()
+            );
+
+
         try {
             insert2.insert(rows, false);
         } catch (DavaException e) {
             log.trace("caught");
         }
-
-
-        FileUtil.cache = new Cache();
 
         // rollback
         Timer timer = Timer.start();
@@ -669,7 +680,7 @@ class HardOperationsTest {
         long size = table.getSize(partition);
         assertEquals(intialSize, size);
 
-        // assert none all the rows before are in the table after
+        // assert all the rows before are in the table after
         allRowBefore.forEach(beforeRow ->
             assertTrue(
                 allRowAfter.stream()
@@ -679,6 +690,9 @@ class HardOperationsTest {
     }
 
 
+    /*
+     * Three inserts performed in sequence
+     */
     @ParameterizedTest
     @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
     // @ValueSource(strings = {"INDEX_ALL"})
@@ -715,6 +729,87 @@ class HardOperationsTest {
         long size = table.getSize(partition);
         assertEquals(intialSize + INSERT_ITERATIONS * 2, size);
 
+    }
+
+
+    /*
+     * Two inserts in a transaction. The first succeeds, the seconds fails part way
+     * through logging it rollback.
+     * 
+     * This is then rolled back, with the first insert being rolled back and the second
+     * being basically ignored since no action was taken
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
+    // @ValueSource(strings = {"INDEX_ALL"})
+    void rollback_second_insert_fails_during_log_rollback(Mode tableMode) throws IOException {
+
+        setUp(tableMode);
+
+        Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+        long intialSize = table.getSize(partition);
+
+
+        // get all rows
+        List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
+
+
+        // do insert
+        int INSERT_ITERATIONS = 100;
+        List<Row> firstInsertRows = makeRows(seed + ITERATIONS, INSERT_ITERATIONS);
+        firstInsertRows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        Insert insert = new Insert(database, table, partition);
+        insert.insert(firstInsertRows, true);
+
+        // do insert
+        List<Row> rows = makeRows(seed + ITERATIONS + ITERATIONS, INSERT_ITERATIONS);
+        rows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        Insert insert2 = new Insert(database, table, partition);
+
+
+        // mock fileutil so we can through failures
+        FileUtil spyFileUtil = Mockito.spy(new FileUtil());
+        insert2.fileUtil = spyFileUtil;
+        doThrow(DavaException.class).when(spyFileUtil).writeBytes(
+            any(),
+            any()
+        );
+
+
+        try {
+            insert2.insert(rows, false);
+        } catch (DavaException e) {
+            log.trace("caught");
+        }
+
+        // erase a few lines off the logback file (simulates crash mid way through rollback log)
+        long fileSize = fileUtil.fileSize(table.getRollbackPath(partition));
+        fileUtil.truncate(table.getRollbackPath(partition), fileSize - 100);
+
+
+        // rollback
+        Rollback rollback = new Rollback();
+        rollback.rollback(table, partition, table.getRollbackPath(partition));
+
+        // get all rows
+        List<Row> allRowAfter = new All().retrieve(table, List.of(), null, null);
+
+        // assert table is the same size after rollback
+        long size = table.getSize(partition);
+        assertEquals(intialSize, size);
+
+        // assert all the rows before are in the table after
+        allRowBefore.forEach(beforeRow ->
+            assertTrue(
+                allRowAfter.stream()
+                    .anyMatch(afterRow -> afterRow.equals(beforeRow))
+            )
+        );
     }
 
 

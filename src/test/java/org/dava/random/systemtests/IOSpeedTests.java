@@ -40,6 +40,9 @@ class IOSpeedTests {
      */
 
 
+    private FileUtil fileUtil = new FileUtil();
+
+
     @Test
     void read_large() throws IOException {
         /*
@@ -55,13 +58,13 @@ class IOSpeedTests {
         // make 5000 test files
         String row = "$450,02/18/2020";
         for (int i = 0; i < NUM_ROWS; i++) {
-            FileUtil.writeFile(i + ".csv", i + "," + row);
+            fileUtil.writeFile(i + ".csv", i + "," + row);
         }
 
         // test reading from 5000 files
         long time = System.currentTimeMillis();
         for (int i = 0; i < NUM_ROWS; i++) {
-            String rRow = FileUtil.readFile(i + ".csv");
+            String rRow = fileUtil.readFile(i + ".csv");
         }
         System.out.print("x files: ");
         System.out.println(System.currentTimeMillis() - time);
@@ -72,11 +75,11 @@ class IOSpeedTests {
         for (int i = 0; i < NUM_ROWS; i++) {
             rows += i + "," + row + "\n";
         }
-        FileUtil.writeFile(NUM_ROWS + ".csv", rows);
+        fileUtil.writeFile(NUM_ROWS + ".csv", rows);
 
         // test reading 5000 lines from a file
         time = System.currentTimeMillis();
-        String content = FileUtil.readFile(NUM_ROWS + ".csv");
+        String content = fileUtil.readFile(NUM_ROWS + ".csv");
         String[] lines = content.split("\n");
         for (String line : lines) {
             String rRow = line;
@@ -96,7 +99,7 @@ class IOSpeedTests {
         System.out.println(System.currentTimeMillis() - time);
 
         for (int i = 0; i < NUM_ROWS; i++) {
-            FileUtil.deleteFile(i + ".csv");
+            fileUtil.deleteFile(i + ".csv");
         }
 
     }
@@ -118,12 +121,12 @@ class IOSpeedTests {
         for (int i = 0; i < NUM_ROWS; i++) {
             rows += i + "," + row + "\n";
         }
-        FileUtil.writeFile(NUM_ROWS + ".csv", rows);
+        fileUtil.writeFile(NUM_ROWS + ".csv", rows);
 
         // test reading up to line NUM_ROWS/2
         long time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            String content = FileUtil.readFile(NUM_ROWS + ".csv");
+            String content = fileUtil.readFile(NUM_ROWS + ".csv");
             String line = content.substring(2500, 2530);
         }
         System.out.print("Large file read all then find line 2500: ");
@@ -133,7 +136,7 @@ class IOSpeedTests {
         // test reading certain line in file
         time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            String rRwo = FileUtil.readFile(NUM_ROWS + ".csv", 2500, 2530);
+            String rRwo = fileUtil.readFile(NUM_ROWS + ".csv", 2500, 2530);
         }
         System.out.print("Large file read line 2500: ");
         System.out.println(System.currentTimeMillis() - time);
@@ -163,12 +166,12 @@ class IOSpeedTests {
                 rows += i + "," + row + "\n";
             }
             System.out.println("p"+p);
-            FileUtil.writeFile("partition_" + p + ".csv", rows);
+            fileUtil.writeFile("partition_" + p + ".csv", rows);
         }
 
         long time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            String rRow = FileUtil.readFile("partition_1.csv", 2500, 2530);
+            String rRow = fileUtil.readFile("partition_1.csv", 2500, 2530);
         }
         System.out.print("reading one row from partition: ");
         System.out.println(System.currentTimeMillis() - time);
@@ -181,11 +184,11 @@ class IOSpeedTests {
             if (i == NUM_ROWS/PARTITIONS)
                 System.out.println("half");
         }
-        FileUtil.writeFile(NUM_ROWS + ".csv", rows);
+        fileUtil.writeFile(NUM_ROWS + ".csv", rows);
 
         time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            String rRwo = FileUtil.readFile(NUM_ROWS + ".csv", 2500, 2530);
+            String rRwo = fileUtil.readFile(NUM_ROWS + ".csv", 2500, 2530);
         }
         System.out.print("reading one row from large file: ");
         System.out.println(System.currentTimeMillis() - time);
@@ -221,28 +224,28 @@ class IOSpeedTests {
             for (int i = 0; i < NUM_ROWS; i++) {
                 rows.append(i).append(",").append(row).append("\n");
             }
-            FileUtil.writeFile(NUM_ROWS + ".csv", rows.toString());
+            fileUtil.writeFile(NUM_ROWS + ".csv", rows.toString());
 
             long time = System.currentTimeMillis();
-            String allRows = FileUtil.readFile(NUM_ROWS + ".csv");
+            String allRows = fileUtil.readFile(NUM_ROWS + ".csv");
             String[] rowsSplit = allRows.split("\n");
             System.out.print("reading " + NUM_ROWS + " rows: ");
             System.out.println(System.currentTimeMillis() - time);
 
             long rtime = System.currentTimeMillis();
-            String rRow = FileUtil.readLine(NUM_ROWS + ".csv", NUM_ROWS/2);
+            String rRow = fileUtil.readLine(NUM_ROWS + ".csv", NUM_ROWS/2);
             System.out.print("reading one line from large file: ");
             System.out.println(System.currentTimeMillis() - rtime);
 
 
 
-            FileUtil.writeFile("oneRow0.csv",   "0," + row + "\n");
-            FileUtil.writeFile("oneRow1.csv",   "0," + row + "\n");
-            FileUtil.writeFile("oneRow2.csv",   "0," + row + "\n");
+            fileUtil.writeFile("oneRow0.csv",   "0," + row + "\n");
+            fileUtil.writeFile("oneRow1.csv",   "0," + row + "\n");
+            fileUtil.writeFile("oneRow2.csv",   "0," + row + "\n");
             long stime = System.currentTimeMillis();
             for (int i = 0; i < SINGLE_FILE_READS; i++) {
                 int index = i % 3;
-                String rRwo = FileUtil.readFile("oneRow" + index + ".csv");
+                String rRwo = fileUtil.readFile("oneRow" + index + ".csv");
             }
             System.out.print("reading one row " + SINGLE_FILE_READS + " times: ");
             System.out.println(System.currentTimeMillis() - stime);
@@ -304,7 +307,7 @@ class IOSpeedTests {
 
         File directory = new File("one_rows");
         directory.mkdirs();
-        FileUtil.writeFile("one_rows/1_row.csv", "25");
+        fileUtil.writeFile("one_rows/1_row.csv", "25");
 
         int ITERATIONS = 10000;
 
@@ -320,7 +323,7 @@ class IOSpeedTests {
 
         time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            String name = FileUtil.readFile("one_rows/1_row.csv");
+            String name = fileUtil.readFile("one_rows/1_row.csv");
         }
         System.out.print("read file row: ");
         System.out.println(System.currentTimeMillis() - time);
@@ -345,23 +348,23 @@ class IOSpeedTests {
         File directory = new File("one_rows");
         directory.mkdirs();
         for (int i = 0; i < ITERATIONS; i++) {
-            FileUtil.writeFile("one_rows/single_line_index_" + i + ".index", "25");
+            fileUtil.writeFile("one_rows/single_line_index_" + i + ".index", "25");
         }
         for (int i = 0; i < ITERATIONS; i++) {
-            FileUtil.writeBytes("one_rows/all_lines_index.index", i * 8, TypeToByteUtil.longToByteArray(25L));
+            fileUtil.writeBytes("one_rows/all_lines_index.index", i * 8, TypeToByteUtil.longToByteArray(25L));
         }
 
 
         long time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            byte[] bytes = FileUtil.readBytes("one_rows/single_line_index_" + i + ".index");
+            byte[] bytes = fileUtil.readBytes("one_rows/single_line_index_" + i + ".index");
         }
         System.out.print("read each single line index: ");
         System.out.println(System.currentTimeMillis() - time);
 
 
         time = System.currentTimeMillis();
-        byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index");
+        byte[] bytes = fileUtil.readBytes("one_rows/all_lines_index.index");
         System.out.print("read all lines index: ");
         System.out.println(System.currentTimeMillis() - time);
     }
@@ -383,12 +386,12 @@ class IOSpeedTests {
         File directory = new File("one_rows");
         directory.mkdirs();
         byte[] file = new byte[ITERATIONS * 8];
-        FileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
+        fileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
 
 
         long time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index", i * 8, 8);
+            byte[] bytes = fileUtil.readBytes("one_rows/all_lines_index.index", i * 8, 8);
         }
         System.out.print("num ITERATIONS individual reads: ");
         System.out.println(System.currentTimeMillis() - time);
@@ -401,7 +404,7 @@ class IOSpeedTests {
             numBytes.add(8L);
         }
         time = System.currentTimeMillis();
-        List<Object> bytes = FileUtil.readBytes("one_rows/all_lines_index.index", startBytes, numBytes);
+        List<Object> bytes = fileUtil.readBytes("one_rows/all_lines_index.index", startBytes, numBytes);
         System.out.print("num ITERATIONS bulk read: ");
         System.out.println(System.currentTimeMillis() - time);
     }
@@ -426,9 +429,9 @@ class IOSpeedTests {
 
         File directory = new File("one_rows");
         directory.mkdirs();
-        FileUtil.deleteFile("one_rows/all_lines_index.index");
+        fileUtil.deleteFile("one_rows/all_lines_index.index");
         byte[] file = new byte[ITERATIONS * 8];
-        FileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
+        fileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
 
 
         List<Long> startBytes = new ArrayList<>();
@@ -439,7 +442,7 @@ class IOSpeedTests {
         }
         long time = System.currentTimeMillis();
         for (int i = 0; i <MULT; i++) {
-            List<Object> bytes = FileUtil.readBytes("one_rows/all_lines_index.index", startBytes, numBytes);
+            List<Object> bytes = fileUtil.readBytes("one_rows/all_lines_index.index", startBytes, numBytes);
 //            int size = bytes.stream()
 //                    .map( byteArr -> byteArr.length )
 //                    .reduce(0, Integer::sum);
@@ -451,7 +454,7 @@ class IOSpeedTests {
 
         time = System.currentTimeMillis();
         for (int i = 0; i <MULT; i++) {
-            byte[] allLines = FileUtil.readBytes("one_rows/all_lines_index.index");
+            byte[] allLines = fileUtil.readBytes("one_rows/all_lines_index.index");
 //            System.out.println(allLines.length);
         }
         System.out.print("read all lines index: ");
@@ -494,7 +497,7 @@ class IOSpeedTests {
         int NUM_ROWS = 100;
 
         for (int i = 0; i < NUM_ROWS; i++) {
-            FileUtil.createFile("test/" + i + ".csv");
+            fileUtil.createFile("test/" + i + ".csv");
         }
 
 
@@ -502,7 +505,7 @@ class IOSpeedTests {
         long time = System.currentTimeMillis();
         for (int j = 0; j < ITERATIONS; j++) {
             for (int i = 0; i < NUM_ROWS; i++) {
-                FileUtil.writeBytes("test/" + i + ".csv", 0, (i + "," + row).getBytes(StandardCharsets.UTF_8) );
+                fileUtil.writeBytes("test/" + i + ".csv", 0, (i + "," + row).getBytes(StandardCharsets.UTF_8) );
             }
         }
         System.out.print("writing to NUM_ROWS files: ");
@@ -516,7 +519,7 @@ class IOSpeedTests {
             for (int i = 0; i < NUM_ROWS; i++) {
                 stringBuilder.append(row).append("\n");
             }
-            FileUtil.writeBytes("test/" + 0 + ".csv", 0, stringBuilder.toString().getBytes(StandardCharsets.UTF_8) );
+            fileUtil.writeBytes("test/" + 0 + ".csv", 0, stringBuilder.toString().getBytes(StandardCharsets.UTF_8) );
         }
         System.out.print("writing to 1 files: ");
         System.out.println(System.currentTimeMillis() - time);
@@ -546,12 +549,12 @@ class IOSpeedTests {
 
         // write NUM_ROWS lines to NUM_ROWS files
         for (int i = 0; i < NUM_ROWS; i++) {
-            FileUtil.createFile("test/" + i + ".csv");
+            fileUtil.createFile("test/" + i + ".csv");
         }
         long time = System.currentTimeMillis();
         for (int j = 0; j < ITERATIONS; j++) {
             for (int i = 0; i < NUM_ROWS; i++) {
-                FileUtil.writeBytes("test/" + i + ".csv", 0, (i + "," + row).getBytes(StandardCharsets.UTF_8) );
+                fileUtil.writeBytes("test/" + i + ".csv", 0, (i + "," + row).getBytes(StandardCharsets.UTF_8) );
             }
         }
         System.out.print("writing to NUM_ROWS files: ");
@@ -561,13 +564,13 @@ class IOSpeedTests {
         // write NUM_ROWS lines to 1 file jumping
         byte[] bytes = (1 + "," + row).getBytes(StandardCharsets.UTF_8);
         for (int i = 0; i < LARGE_FILE_ROWS; i++) {
-            FileUtil.writeBytes("test/" + 0 + ".csv", (long) i * bytes.length, bytes);
+            fileUtil.writeBytes("test/" + 0 + ".csv", (long) i * bytes.length, bytes);
         }
         int step = LARGE_FILE_ROWS/NUM_ROWS;
         time = System.currentTimeMillis();
         for (int j = 0; j < ITERATIONS; j++) {
             for (int i = 0; i < NUM_ROWS; i++) {
-                FileUtil.writeBytes("test/" + 0 + ".csv", step * i, (i + "," + row).getBytes(StandardCharsets.UTF_8) );
+                fileUtil.writeBytes("test/" + 0 + ".csv", step * i, (i + "," + row).getBytes(StandardCharsets.UTF_8) );
             }
         }
         System.out.print("writing to 1 file jumping: ");
@@ -603,11 +606,11 @@ class IOSpeedTests {
 //        );
 
 //        Timer timer = Timer.start();
-//        FileUtil.writeObjectToFile("test.obj", rollbackRecord);
+//        fileUtil.writeObjectToFile("test.obj", rollbackRecord);
 //        timer.printRestart();
 //
 //        timer = Timer.start();
-//        rollbackRecord = FileUtil.readObjectFromFile("test.obj", RollbackRecord.class);
+//        rollbackRecord = fileUtil.readObjectFromFile("test.obj", RollbackRecord.class);
 //        timer.printRestart();
 //
 //        System.out.println(rollbackRecord);
@@ -616,7 +619,7 @@ class IOSpeedTests {
 //        String serialized = rollbackRecord.toString();
 //
 //        Timer timer = Timer.start();
-//        FileUtil.writeBytes("test.obj", 0, serialized.getBytes());
+//        fileUtil.writeBytes("test.obj", 0, serialized.getBytes());
 //        timer.printRestart();
 //
 //        System.out.println(rollbackRecord);
@@ -639,13 +642,13 @@ class IOSpeedTests {
         File directory = new File("one_rows");
         directory.mkdirs();
         byte[] file = new byte[ITERATIONS * 8];
-        FileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
-        int fileSize = Math.toIntExact(FileUtil.fileSize("one_rows/all_lines_index.index"));
+        fileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
+        int fileSize = Math.toIntExact(fileUtil.fileSize("one_rows/all_lines_index.index"));
 
 
         long time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index", 0L, fileSize);
+            byte[] bytes = fileUtil.readBytes("one_rows/all_lines_index.index", 0L, fileSize);
         }
         System.out.print("reading large file: ");
         System.out.println(System.currentTimeMillis() - time);
@@ -654,7 +657,7 @@ class IOSpeedTests {
 
         time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            List<File> folders = FileUtil.getSubFolders("src");
+            List<File> folders = fileUtil.getSubFolders("src");
         }
         System.out.print("sub folders: ");
         System.out.println(System.currentTimeMillis() - time);
@@ -665,22 +668,22 @@ class IOSpeedTests {
 
 
         Timer timer = Timer.start();
-        FileUtil.getLeafFolders("db/Order/indices_Order");
+        fileUtil.getLeafFolders("db/Order/indices_Order");
         timer.printRestart("leaf");
 
 
         timer = Timer.start();
-        List<File> dirs =  FileUtil.getSubFoldersRecursive("db/Order/indices_Order/time");
+        List<File> dirs =  fileUtil.getSubFoldersRecursive("db/Order/indices_Order/time");
         timer.printRestart(String.valueOf(dirs.size()));
 
 
         timer = Timer.start();
-        FileUtil.getSubFoldersRecursive("db/Order/indices_Order/orderId");
+        fileUtil.getSubFoldersRecursive("db/Order/indices_Order/orderId");
         timer.printRestart();
 
 
         timer = Timer.start();
-        FileUtil.getSubFoldersRecursive("db/Order/indices_Order/total");
+        fileUtil.getSubFoldersRecursive("db/Order/indices_Order/total");
         timer.printRestart();
 
 
@@ -690,11 +693,11 @@ class IOSpeedTests {
 
 
         timer = Timer.start();
-        FileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
+        fileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
         timer.printRestart("writing directories to file");
 
         timer = Timer.start();
-        byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index", 0L, file.length);
+        byte[] bytes = fileUtil.readBytes("one_rows/all_lines_index.index", 0L, file.length);
         timer.printRestart("reading directories from file");
 
     }
@@ -717,13 +720,13 @@ class IOSpeedTests {
         File directory = new File("one_rows");
         directory.mkdirs();
         byte[] file = new byte[8];
-        FileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
-        int fileSize = Math.toIntExact(FileUtil.fileSize("one_rows/all_lines_index.index"));
+        fileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
+        int fileSize = Math.toIntExact(fileUtil.fileSize("one_rows/all_lines_index.index"));
 
 
         long time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index", 0L, 8);
+            byte[] bytes = fileUtil.readBytes("one_rows/all_lines_index.index", 0L, 8);
         }
         System.out.print("reading count file: ");
         System.out.println(System.currentTimeMillis() - time);
@@ -732,7 +735,7 @@ class IOSpeedTests {
 
         time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            FileUtil.getSubFiles("db/Order/META_Order/orderId").size();
+            fileUtil.getSubFiles("db/Order/META_Order/orderId").size();
 //            System.out.print("");
         }
         System.out.print("sub folders: ");
@@ -783,12 +786,12 @@ class IOSpeedTests {
         File directory = new File("one_rows");
         directory.mkdirs();
         byte[] file = new byte[100000 * 10];
-        FileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
+        fileUtil.writeBytes("one_rows/all_lines_index.index", 0, file);
 
 
         long time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            byte[] bytes = FileUtil.readBytes("one_rows/all_lines_index.index", 0L, 8);
+            byte[] bytes = fileUtil.readBytes("one_rows/all_lines_index.index", 0L, 8);
         }
         System.out.print("reading 8 bytes: ");
         System.out.println(System.currentTimeMillis() - time);
@@ -796,7 +799,7 @@ class IOSpeedTests {
 
         time = System.currentTimeMillis();
         for (int i = 0; i < ITERATIONS; i++) {
-            long fileSize = FileUtil.fileSize("one_rows/all_lines_index.index");
+            long fileSize = fileUtil.fileSize("one_rows/all_lines_index.index");
         }
         System.out.print("reading file size: ");
         System.out.println(System.currentTimeMillis() - time);

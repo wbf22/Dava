@@ -43,10 +43,11 @@ class BasicOperationsTest {
     static Long seed = -183502108378805369L;
     private static final Logger log = Logger.getLogger(BasicOperationsTest.class.getName());
 
+    static FileUtil fileUtil = new FileUtil();
 
     static void setUpWipeAndPopulate() throws IOException {
-        if (FileUtil.exists(DB_ROOT + "/Order")) {
-            FileUtil.deleteDirectory(DB_ROOT + "/Order");
+        if (fileUtil.exists(DB_ROOT + "/Order")) {
+            fileUtil.deleteDirectory(DB_ROOT + "/Order");
         }
 
         seed = (seed == null)? new Random().nextLong() : seed;
@@ -360,17 +361,9 @@ class BasicOperationsTest {
 
         Timer timer;
 
-        // with cache
-        timer = Timer.start();
-        for (int i = 0; i < 10; i++) {
-            List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
-        }
-        timer.printRestart();
-
         // without using cache
         timer = Timer.start();
         for (int i = 0; i < 10; i++) {
-            FileUtil.invalidateCache();
             List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
         }
         timer.printRestart();

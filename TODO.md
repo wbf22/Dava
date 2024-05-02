@@ -5,6 +5,10 @@
 - figure out how to include java docs in deploy
 - build jar and deploy to github packages
 - handle partial lines in rollbacks
+- cache won't work currently with concurrency
+- ensure rollback of partial writes work
+- get rid of fileutil cache (slower)
+- try top level query cache instead
 
 
 # Todo

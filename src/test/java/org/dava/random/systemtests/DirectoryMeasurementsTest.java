@@ -11,6 +11,8 @@ class DirectoryMeasurementsTest {
 
     Logger log = Logger.getLogger("log");
 
+    FileUtil fileUtil = new FileUtil();
+
     @Test
     void mesaure_directory() {
         String DIRECTORY = "/Users/brandon.fowler/Desktop/db";
@@ -20,17 +22,17 @@ class DirectoryMeasurementsTest {
         getSize(DIRECTORY, 0);
 
         log.space();
-        log.print(DIRECTORY + "/Order/Order.csv " + FileUtil.fileSize(DIRECTORY + "/Order/Order.csv")/1000.0 + " mb");
+        log.print(DIRECTORY + "/Order/Order.csv " + fileUtil.fileSize(DIRECTORY + "/Order/Order.csv")/1000.0 + " mb");
 
     }
 
 
     long getSize(String directory, int depth) {
-        File[] files = FileUtil.listFiles(directory);
+        File[] files = fileUtil.listFiles(directory);
         long size = Arrays.stream(files).sequential()
             .filter(file -> !file.isDirectory())
             .map(File::getPath)
-            .map(FileUtil::fileSize)
+            .map(fileUtil::fileSize)
             .reduce(0L, Long::sum);
 
         size += Arrays.stream(files).sequential()

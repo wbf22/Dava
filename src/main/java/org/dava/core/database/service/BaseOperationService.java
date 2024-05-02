@@ -36,7 +36,7 @@ public class BaseOperationService {
 
     public static int NUMERIC_PARTITION_SIZE = 10;//1000000
 
-
+    public static FileUtil fileUtil = new FileUtil();
 
 
     /**
@@ -48,8 +48,8 @@ public class BaseOperationService {
         try {
 
             // make index file if it doesn't exist
-            if (!FileUtil.exists(folderPath)) {
-                FileUtil.createDirectoriesIfNotExist(folderPath);
+            if (!fileUtil.exists(folderPath)) {
+                fileUtil.createDirectoriesIfNotExist(folderPath);
 
                 // update numeric or date index counts
                 if (TypeUtil.isNumericClass(indexWritePackages.get(0).getColumnType())) {
@@ -63,12 +63,12 @@ public class BaseOperationService {
             }
 
             String path = folderPath + "/" + value + ".index";
-            if (FileUtil.exists(path) && isUnique) {
+            if (fileUtil.exists(path) && isUnique) {
                     throw new DavaException(UNIQUE_CONSTRAINT_VIOLATION, "Row already exists with unique value or key: " + value, null);
             }
 
             // write indices to index
-            FileUtil.writeBytes(
+            fileUtil.writeBytes(
                 path,
                 (List<WritePackage>) (List<?>) indexWritePackages
             );
@@ -226,7 +226,7 @@ public class BaseOperationService {
     private static Stream<Row> getRowsFromTablePartitionWithoutIndicies(Table<?> table, String partition, Predicate<Row> filter, long startRow, Long endRow) {
         try {
             int end = (endRow == null)? Integer.MAX_VALUE : Math.toIntExact(endRow);
-            byte[] bytes = FileUtil.readBytes(
+            byte[] bytes = fileUtil.readBytes(
                 table.getTablePath(partition),
                 0,
                 null
@@ -342,7 +342,7 @@ public class BaseOperationService {
                 table.getPartitions().parallelStream()
                 .flatMap(partition -> {
                     String columnPath = Index.buildColumnPath(table.getDatabaseRoot(), table.getTableName(), partition, columnName);
-                    return Arrays.stream(FileUtil.listFiles(columnPath))
+                    return Arrays.stream(fileUtil.listFiles(columnPath))
                         .map(File::getPath)
                         .filter(filePath -> {
                             if (filePath.contains(".count")) return false;
@@ -362,7 +362,7 @@ public class BaseOperationService {
             while (!done) {
                 
                 String file = nextFiles.pop();
-                File[] files = FileUtil.listFilesIfDirectory(file);
+                File[] files = fileUtil.listFilesIfDirectory(file);
                 if (files != null) {
                     // since equal value folders could have overlapping sub files we need to drill down through all of them to get the files in order
                     List<String> newFilesToExplore = Arrays.stream(files)
@@ -382,7 +382,7 @@ public class BaseOperationService {
                             next = nextFiles.peek();
     
     
-                            File[] otherFiles = FileUtil.listFilesIfDirectory(next);
+                            File[] otherFiles = fileUtil.listFilesIfDirectory(next);
                             if (otherFiles == null) {
                                 newFilesToExplore.add(next);
                             }
@@ -500,7 +500,7 @@ public class BaseOperationService {
 
     private static Stream<Long> getNumericIndexValuesInFolder(String folderPath, Long point,
             BiPredicate<Long, Long> compareValues, boolean descending) {
-        return Arrays.stream(FileUtil.listFiles(folderPath))
+        return Arrays.stream(fileUtil.listFiles(folderPath))
             .filter(File::isFile)
             .map(file -> Long.parseLong(file.getName().split(".")[0]))
             .filter(fileLong -> compareValues.test(fileLong, point))
@@ -510,7 +510,7 @@ public class BaseOperationService {
     }
 
     public static List<Long> getNumericFolders(String columnPath, Long point, BiPredicate<Long, Long> compareValues, boolean descending) {
-        return Arrays.stream(FileUtil.listFiles(columnPath))
+        return Arrays.stream(fileUtil.listFiles(columnPath))
             .filter(File::isDirectory)
             .map(folder -> Long.parseLong(folder.getName().substring(1)))
             .filter(folderLong -> compareValues.test(folderLong, point))
@@ -528,14 +528,14 @@ public class BaseOperationService {
         try {
 
             byte[] bytes;
-            long fileSize = FileUtil.fileSize(filePath);
+            long fileSize = fileUtil.fileSize(filePath);
             if (fileSize == 0)
                 return new Bundle<>(0L, new ArrayList<>());
 
             numBytes = Math.toIntExact(
                 (numBytes == null || fileSize < numBytes + startByte) ? fileSize - startByte : numBytes
             );
-            bytes = (startByte > fileSize)? null : FileUtil.readBytes(filePath, startByte, numBytes);
+            bytes = (startByte > fileSize)? null : fileUtil.readBytes(filePath, startByte, numBytes);
             if (bytes == null)
                 return new Bundle<>(fileSize, new ArrayList<>());
 
@@ -558,7 +558,7 @@ public class BaseOperationService {
     public static List<String> getLinesUsingRoutes(String partition, Table<?> table, List<Route> rows) {
 
         try {
-            return FileUtil.readBytes(
+            return fileUtil.readBytes(
                 table.getTablePath(partition),
                 rows.stream()
                     .map(Route::getOffsetInTable)
@@ -582,13 +582,13 @@ public class BaseOperationService {
     }
 
     public static long getCountForIndexPath(String path) {
-        return FileUtil.fileSize(path) / 10;
+        return fileUtil.fileSize(path) / 10;
     }
 
     public static long getCountFromCountFile(String path) {
         try {
             return TypeToByteUtil.byteArrayToLong(
-                FileUtil.readBytes(path)
+                fileUtil.readBytes(path)
             );
         } catch (IOException e) {
             throw new DavaException(INDEX_READ_ERROR, "Couldn't read count file for index: " + path, e);
@@ -598,12 +598,12 @@ public class BaseOperationService {
     public static void updateNumericCountFile(String folderPath, long change) {
         String countFile = folderPath + "/c.count";
         try {
-            FileUtil.createDirectoriesIfNotExist(folderPath);
+            fileUtil.createDirectoriesIfNotExist(folderPath);
 
             long count = TypeToByteUtil.byteArrayToLong(
-                FileUtil.readBytes(countFile, 0, 8)
+                fileUtil.readBytes(countFile, 0, 8)
             );
-            FileUtil.changeCount(countFile, 0, count + change, 8);
+            fileUtil.changeCount(countFile, 0, count + change, 8);
 
         } catch (IOException e) {
             throw new DavaException(INDEX_CREATION_ERROR, "Error updating count for numeric index partition: " + countFile, e);
@@ -614,7 +614,7 @@ public class BaseOperationService {
     public static BigDecimal repartitionNumericIndex(String folderPath, BigDecimal defaultMedian) {
         try {
             String countFile = folderPath + "/c.count";
-            File[] files = FileUtil.listFiles(folderPath);
+            File[] files = fileUtil.listFiles(folderPath);
 
             int step = files.length / 5;
             List<BigDecimal> samples = IntStream.range(0, 5)
@@ -624,8 +624,8 @@ public class BaseOperationService {
                 .sorted(BigDecimal::compareTo)
                 .toList();
             BigDecimal median = samples.get(2);
-            FileUtil.createDirectoriesIfNotExist(folderPath + "/-" + median);
-            FileUtil.createDirectoriesIfNotExist(folderPath + "/+" + median);
+            fileUtil.createDirectoriesIfNotExist(folderPath + "/-" + median);
+            fileUtil.createDirectoriesIfNotExist(folderPath + "/+" + median);
 
             List<File> lessThan = new ArrayList<>();
             List<File> greaterThanOrEqual = new ArrayList<>();
@@ -646,19 +646,19 @@ public class BaseOperationService {
             String newLowerPath = folderPath + "/-" + median;
 
             // make copies of files in new partition folders
-            FileUtil.copyFilesToDirectory(lessThan, newLowerPath);
-            FileUtil.copyFilesToDirectory(greaterThanOrEqual, newUpperPath);
+            fileUtil.copyFilesToDirectory(lessThan, newLowerPath);
+            fileUtil.copyFilesToDirectory(greaterThanOrEqual, newUpperPath);
 
-            FileUtil.createFile(folderPath + "/-" + median + "/c.count", TypeToByteUtil.longToByteArray(lessThan.size()) );
-            FileUtil.createFile(folderPath + "/+" + median + "/c.count", TypeToByteUtil.longToByteArray(greaterThanOrEqual.size()) );
+            fileUtil.createFile(folderPath + "/-" + median + "/c.count", TypeToByteUtil.longToByteArray(lessThan.size()) );
+            fileUtil.createFile(folderPath + "/+" + median + "/c.count", TypeToByteUtil.longToByteArray(greaterThanOrEqual.size()) );
 
             // delete original files
-            FileUtil.deleteFile(countFile);
+            fileUtil.deleteFile(countFile);
             for (File file : lessThan) {
-                FileUtil.deleteFile(file);
+                fileUtil.deleteFile(file);
             }
             for (File file : greaterThanOrEqual) {
-                FileUtil.deleteFile(file);
+                fileUtil.deleteFile(file);
             }
 
             return median;
@@ -668,7 +668,7 @@ public class BaseOperationService {
     }
 
     public static long getNumericCount(String countFile) throws IOException {
-        byte[] countBytes = FileUtil.readBytes(countFile, 0, 8);
+        byte[] countBytes = fileUtil.readBytes(countFile, 0, 8);
         return (countBytes == null)? 0L :
             TypeToByteUtil.byteArrayToLong(
                 countBytes
@@ -693,19 +693,19 @@ public class BaseOperationService {
             .map(i -> 8 + i * 10L)
             .collect(Collectors.toList());
 
-        FileUtil.popBytes(emptiesFile, 10, startBytes);
+        fileUtil.popBytes(emptiesFile, 10, startBytes);
     }
 
     public static List<Route> getAllEmpties(String emptiesFile) throws IOException {
         // TODO don't check for empties every time to avoid this costly file access
-        long fileSize = FileUtil.fileSize(emptiesFile);
+        long fileSize = fileUtil.fileSize(emptiesFile);
         if ( fileSize - 10 <= 8) {
             return null;
         }
 
         EmptiesPackage emptiesPackages = new EmptiesPackage();
 
-        byte[] bytes = FileUtil.readBytes(emptiesFile);
+        byte[] bytes = fileUtil.readBytes(emptiesFile);
         return Route.parseBytes(
             ArrayUtil.subRange(bytes, 8, bytes.length),
             null
@@ -715,7 +715,7 @@ public class BaseOperationService {
 
     public static void writeLong(String filePath, long longToWrite) {
         try {
-            FileUtil.writeBytesAppend(
+            fileUtil.writeBytesAppend(
                 filePath,
                 TypeToByteUtil.longToByteArray(longToWrite)
             );
