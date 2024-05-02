@@ -3,6 +3,7 @@ package org.dava.random.systemtests;
 import org.dava.core.common.Timer;
 import org.dava.core.common.logger.Logger;
 import org.dava.core.database.objects.dates.ZonedDate;
+import org.dava.core.database.service.caching.Cache;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Random;
 import java.util.UUID;
 import java.util.stream.IntStream;
@@ -187,6 +189,70 @@ public class RandomTests {
                 boolean equal = longStr.equals(longStr2);
              });
          timer.printRestart();
+
+    }
+
+
+
+    @Test
+    void test_cache_hash_function_overhead() throws InterruptedException {
+        /*
+            TEST RESULTS:
+                33ms
+                66ms
+                3ms
+
+            Just concatenating strings is faster than using the cache hash function, but both are
+            super fast that there isn't any real savings.
+
+            With a query with say 10 cache hits it's only 1ms of overhead.
+
+            If we're caching on the query level though, we'd only have one cache hit so that'd be 
+            sub 1ms of overhead.
+         */
+
+        int ITERATIONS = 100000;
+
+        String operationName = "operationName";
+        String param1 = "param1";
+        String param2 = "param2";
+        String param3 = "param3";
+        List<String> paramList = List.of(param1, param2, param3);
+
+        // warm up
+        IntStream.range(0, ITERATIONS)
+            .forEach( i -> {
+                String hash = Cache.hash(operationName, param1);
+            });
+
+        Thread.sleep(20);
+
+        // normal
+        Timer timer = Timer.start();
+        IntStream.range(0, ITERATIONS)
+            .forEach( i -> {
+                String hash = Cache.hash(operationName, param1);
+            });
+        timer.printRestart();
+
+
+        // with list
+        timer = Timer.start();
+        IntStream.range(0, ITERATIONS)
+            .forEach( i -> {
+                String hash = Cache.hash(operationName, Cache.hashList(paramList));
+            });
+        timer.printRestart();
+
+
+
+        // plain string
+        timer = Timer.start();
+        IntStream.range(0, ITERATIONS)
+            .forEach( i -> {
+                String hash = new StringBuilder().append(operationName).append(param1).toString();
+            });
+        timer.printRestart();
 
     }
 

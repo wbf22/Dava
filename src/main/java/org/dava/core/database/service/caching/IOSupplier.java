@@ -1,4 +1,4 @@
-package org.dava.core.database.service.fileaccess;
+package org.dava.core.database.service.caching;
 
 import java.io.IOException;
 

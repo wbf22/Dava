@@ -9,6 +9,7 @@ import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 
+@Deprecated
 public class FileUtil {
 
     public static Cache cache = new Cache();

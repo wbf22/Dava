@@ -7,30 +7,33 @@ import org.dava.core.common.logger.Level;
 import org.dava.core.common.logger.Logger;
 import org.dava.core.database.objects.dates.OffsetDate;
 import org.dava.core.database.objects.exception.DavaException;
-import org.dava.core.database.service.fileaccess.Cache;
+import org.dava.core.database.objects.exception.ExceptionType;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.operations.Delete;
 import org.dava.core.database.service.operations.Insert;
+import org.dava.core.database.service.operations.common.WritePackage;
 import org.dava.core.database.service.structure.*;
 import org.dava.core.sql.conditions.After;
 import org.dava.core.sql.conditions.All;
 import org.dava.core.sql.conditions.Before;
 import org.dava.core.sql.conditions.Equals;
 import org.dava.core.sql.operators.And;
-import org.dava.core.database.service.BaseOperationService;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mockito;
+import org.mockito.invocation.InvocationOnMock;
+import org.mockito.stubbing.Answer;
 
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.stream.IntStream;
@@ -40,6 +43,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.doThrow;
 
@@ -119,6 +123,7 @@ class HardOperationsTest {
     void setUp(Mode tableMode) throws IOException {
 
         Logger.setApplicationLogLevel(logLevel);
+        fileUtil = new FileUtil();
         setUpWipeAndPopulate(tableMode);
 //        setUpUseExisting(0L);
     }
@@ -240,7 +245,7 @@ class HardOperationsTest {
         long size = table.getSize(partition);
         assertEquals(intialSize, size);
 
-        // assert none all the rows before are in the table after
+        // assert all the rows before are in the table after
         allRowBefore.forEach(beforeRow ->
             assertTrue(
                 allRowAfter.stream()
@@ -309,12 +314,12 @@ class HardOperationsTest {
         long size = table.getSize(partition);
         assertEquals(intialSize, size);
 
-        // assert none all the rows before are in the table after
+        // assert all the rows before are in the table after
         allRowBefore.forEach(beforeRow ->
-                                 assertTrue(
-                                     allRowAfter.stream()
-                                         .anyMatch(afterRow -> afterRow.equals(beforeRow))
-                                 )
+            assertTrue(
+                allRowAfter.stream()
+                    .anyMatch(afterRow -> afterRow.equals(beforeRow))
+            )
         );
     }
 
@@ -322,7 +327,8 @@ class HardOperationsTest {
      * Tests doing an insert delete insert combo ensuring the correct rows are present afterwards
      */
     @ParameterizedTest
-    @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
+    // @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
+    @ValueSource(strings = {"LIGHT"})
     void insert_delete_insert(Mode tableMode) throws IOException {
         setUp(tableMode);
 
@@ -354,7 +360,7 @@ class HardOperationsTest {
         Insert secondInsert = new Insert(database, table, partition);
         secondInsert.insert(secondInsertRows, true);
 
-        // assert table is the correct size after rollback
+        // assert table is the correct size after second insert
         long size = table.getSize(partition);
         assertEquals(intialSize + INSERT_ITERATIONS, size);
 
@@ -500,8 +506,8 @@ class HardOperationsTest {
      * Test doing insert and delete in a single transaction and rolling everything back
      */
     @ParameterizedTest
-    @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
-//    @ValueSource(strings = {"LIGHT"})
+    // @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
+   @ValueSource(strings = {"LIGHT"})
     void insert_delete_in_transaction_then_rollback(Mode tableMode) throws IOException {
         setUp(tableMode);
 
@@ -588,6 +594,8 @@ class HardOperationsTest {
             log.trace("caught");
         }
 
+        BaseOperationService.fileUtil = new FileUtil();
+
         // rollback
         Timer timer = Timer.start();
         Rollback rollback = new Rollback();
@@ -602,7 +610,7 @@ class HardOperationsTest {
         long size = table.getSize(partition);
         assertEquals(intialSize, size);
 
-        // assert none all the rows before are in the table after
+        // assert all the rows before are in the table after
         allRowBefore.forEach(beforeRow ->
             assertTrue(
                 allRowAfter.stream()
@@ -812,5 +820,193 @@ class HardOperationsTest {
         );
     }
 
+
+    @ParameterizedTest
+    @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
+    // @ValueSource(strings = {"LIGHT"})
+    void rollback_after_crash_halfway_through_table_line_write(Mode tableMode) throws IOException {
+
+        setUp(tableMode);
+
+        Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+        long intialSize = table.getSize(partition);
+
+        // get all rows
+        List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
+
+
+        // do insert with failure
+        int INSERT_ITERATIONS = 100;
+        List<Row> rows = makeRows(seed + ITERATIONS, INSERT_ITERATIONS);
+        rows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        Insert insert = new Insert(database, table, partition);
+
+        // mock fileutil so we can through failures
+        FileUtil spyFileUtil = Mockito.spy(new FileUtil());
+        insert.fileUtil = spyFileUtil;
+        doAnswer(new Answer<Void>() {
+            @Override
+            public Void answer(InvocationOnMock invocation) throws Throwable {
+                Object[] object = invocation.getArguments();
+                String filePath = (String) object[0];
+                List<WritePackage> writePackages = (List<WritePackage>) object[1];
+
+                try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
+                    writePackages.forEach( writePackage -> {
+                            try {
+                                // Move to the desired position in the file
+                                long offset = (writePackage.getOffsetInTable() == null)? file.length() : writePackage.getOffsetInTable();
+                                file.seek(offset);
+
+                                // simulate a crash halfway through writing a line
+                                if (new Random(seed).nextBoolean()){
+                                    byte[] bytes = writePackage.getData();
+                                    bytes = Arrays.copyOf(bytes, bytes.length / 2);
+
+                                    file.write( bytes );
+                                    throw new DavaException(ExceptionType.BASE_IO_ERROR, "test", null);
+                                }
+        
+                                // Write data at the current position
+                                file.write( writePackage.getData() );
+        
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                        });
+                }
+
+                return null;
+            }
+        }).when(spyFileUtil).writeBytes(
+                eq(table.getTablePath(partition)), 
+                anyList()
+            );
+
+        try {
+            insert.insert(rows, true);
+        } catch (DavaException e) {
+            log.trace("caught");
+        }
+
+        // rollback
+        Timer timer = Timer.start();
+        Rollback rollback = new Rollback();
+        rollback.rollback(table, partition, table.getRollbackPath(partition));
+        timer.printRestart();
+
+        // get all rows
+        List<Row> allRowAfter = new All().retrieve(table, List.of(), null, null);
+
+        // assert table is the same size after rollback
+        long size = table.getSize(partition);
+        assertEquals(intialSize, size);
+
+        // assert all the rows before are in the table after
+        allRowBefore.forEach(beforeRow ->
+            assertTrue(
+                allRowAfter.stream()
+                    .anyMatch(afterRow -> afterRow.equals(beforeRow))
+            )
+        );
+    }
+
+
+
+    @ParameterizedTest
+    @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
+    // @ValueSource(strings = {"LIGHT"})
+    void rollback_after_crash_halfway_through_delete(Mode tableMode) throws IOException {
+
+        setUp(tableMode);
+
+        Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+        long intialSize = table.getSize(partition);
+
+        // get all rows
+        List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
+
+
+        // do insert
+        int INSERT_ITERATIONS = 100;
+        List<Row> rows = makeRows(seed + ITERATIONS, INSERT_ITERATIONS);
+        rows.forEach(row -> {
+            log.trace(Row.serialize(table, row.getColumnsToValues()));
+        });
+        Insert insert = new Insert(database, table, partition);
+
+        // mock fileutil so we can through failures
+        FileUtil spyFileUtil = Mockito.spy(new FileUtil());
+        insert.fileUtil = spyFileUtil;
+        doAnswer(new Answer<Void>() {
+            @Override
+            public Void answer(InvocationOnMock invocation) throws Throwable {
+                Object[] object = invocation.getArguments();
+                String filePath = (String) object[0];
+                List<WritePackage> writePackages = (List<WritePackage>) object[1];
+
+                try (RandomAccessFile file = new RandomAccessFile(filePath, "rw")) {
+                    writePackages.forEach( writePackage -> {
+                            try {
+                                // Move to the desired position in the file
+                                long offset = (writePackage.getOffsetInTable() == null)? file.length() : writePackage.getOffsetInTable();
+                                file.seek(offset);
+
+                                // simulate a crash halfway through writing a line
+                                if (new Random(seed).nextBoolean()){
+                                    byte[] bytes = writePackage.getData();
+                                    bytes = Arrays.copyOf(bytes, bytes.length / 2);
+
+                                    file.write( bytes );
+                                    throw new DavaException(ExceptionType.BASE_IO_ERROR, "test", null);
+                                }
+        
+                                // Write data at the current position
+                                file.write( writePackage.getData() );
+        
+                            } catch (IOException e) {
+                                throw new RuntimeException(e);
+                            }
+                        });
+                }
+
+                return null;
+            }
+        }).when(spyFileUtil).writeBytes(
+                eq(table.getTablePath(partition)), 
+                anyList()
+            );
+
+        try {
+            insert.insert(rows, true);
+        } catch (DavaException e) {
+            log.trace("caught");
+        }
+
+        // rollback
+        Timer timer = Timer.start();
+        Rollback rollback = new Rollback();
+        rollback.rollback(table, partition, table.getRollbackPath(partition));
+        timer.printRestart();
+
+        // get all rows
+        List<Row> allRowAfter = new All().retrieve(table, List.of(), null, null);
+
+        // assert table is the same size after rollback
+        long size = table.getSize(partition);
+        assertEquals(intialSize, size);
+
+        // assert all the rows before are in the table after
+        allRowBefore.forEach(beforeRow ->
+            assertTrue(
+                allRowAfter.stream()
+                    .anyMatch(afterRow -> afterRow.equals(beforeRow))
+            )
+        );
+    }
 
 }

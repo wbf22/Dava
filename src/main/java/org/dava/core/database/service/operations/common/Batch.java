@@ -28,7 +28,8 @@ public class Batch {
     private Map<String, List<IndexWritePackage>> indexPathToIndicesWritten;
 
     // delete
-    private List<Row> rows;
+    private List<Row> deletedRows;
+    private List<Row> allRows; // for light mode only
     private Long oldEmptiesSize;
     private Map<String, IndexDelete> indexPathToInvalidRoutes;
 
@@ -45,7 +46,8 @@ public class Batch {
         this.rowsWritten = new ArrayList<>();
         this.indexPathToIndicesWritten = new HashMap<>();
 
-        this.rows = new ArrayList<>();
+        this.deletedRows = new ArrayList<>();
+        this.allRows = new ArrayList<>();
         this.indexPathToInvalidRoutes = new HashMap<>();
         this.numericCountFileChanges = new HashMap<>();
     }
@@ -55,7 +57,7 @@ public class Batch {
         Map<String, List<IndexWritePackage>> writeGroups = new HashMap<>();
         List<RowWritePackage> rowsWritten = new ArrayList<>();
         List<Empty> empties = new ArrayList<>();
-        List<Row> rows = new ArrayList<>();
+        List<Row> deletedRows = new ArrayList<>();
         Long oldTableSize = null;
         Long oldEmptiesSize = null;
         Map<String, IndexDelete> indexPathToInvalidRoutes = new HashMap<>();
@@ -141,7 +143,7 @@ public class Batch {
                 }
                 Integer length = Integer.parseInt(bd.substring(0, bd.length()-1));
 
-                rows.add(
+                deletedRows.add(
                     new Row(
                         line.substring(i+1),
                         table,
@@ -206,7 +208,7 @@ public class Batch {
         batch.usedTableEmtpies = emptiesPackage;
         batch.rowsWritten = rowsWritten;
         batch.indexPathToIndicesWritten = writeGroups;
-        batch.rows = rows;
+        batch.deletedRows = deletedRows;
         batch.oldTableSize = oldTableSize;
         batch.oldEmptiesSize = oldEmptiesSize;
         batch.indexPathToInvalidRoutes = indexPathToInvalidRoutes;
@@ -287,17 +289,31 @@ public class Batch {
         });
 
         // all the rows that are being deleted
-        rows.forEach( row -> {
-            builder.append("Ro:");
-            if (row.getLocationInTable() != null) {
-                builder.append(row.getLocationInTable().getOffsetInTable())
-                    .append(",")
-                    .append(row.getLocationInTable().getLengthInTable())
-                    .append(";");
-            }
-            builder.append(Row.serialize(table, row.getColumnsToValues()))
-                .append("\n");
-        });
+        if (table.getMode() == Mode.LIGHT)
+            allRows.forEach(row -> {
+                builder.append("Ro:");
+                if (row.getLocationInTable() != null) {
+                    builder.append(row.getLocationInTable().getOffsetInTable())
+                        .append(",")
+                        .append(row.getLocationInTable().getLengthInTable())
+                        .append(";");
+                }
+                builder.append(Row.serialize(table, row.getColumnsToValues()))
+                    .append("\n");
+            });
+        else
+            deletedRows.forEach( row -> {
+                builder.append("Ro:");
+                if (row.getLocationInTable() != null) {
+                    builder.append(row.getLocationInTable().getOffsetInTable())
+                        .append(",")
+                        .append(row.getLocationInTable().getLengthInTable())
+                        .append(";");
+                }
+                builder.append(Row.serialize(table, row.getColumnsToValues()))
+                    .append("\n");
+            });
+        
 
         // table sizes
         if (oldTableSize != null)
@@ -431,16 +447,10 @@ public class Batch {
             else if (rowsWritten.size() > 0) {
                 // if light mode, just get all the rows out, remove those to delete, and then write them back
                 List<Row> allRowsWithoutThoseToDelete = BaseOperationService.getAllRowsInTablePartitionWithoutIndicies(table, partition).stream()
-                    .filter(row -> {
-                        // check if routesToDelete contains the row route
-                        boolean containsRowRoute = rowsWritten.stream()
-                            .map(rowToDelete -> rowToDelete.getRow().equals(row))
-                            .reduce(Boolean::logicalOr)
-                            .orElse(false);
-                        return !containsRowRoute;
-                    })
+                    .limit(oldTableSize - 1)
                     .toList();
 
+                // column titles
                 byte[] columnTitles = table.makeColumnTitles().getBytes(StandardCharsets.UTF_8);
                 long offset = columnTitles.length;
                 List<WritePackage> writePackages = new ArrayList<>(
@@ -451,6 +461,7 @@ public class Batch {
                         )
                     )
                 );
+                // all rows from before delete
                 for (Row row : allRowsWithoutThoseToDelete) {
                     String line = Row.serialize(table, row.getColumnsToValues());
                     line += "\n";
@@ -485,14 +496,38 @@ public class Batch {
 
         // add back rows that were deleted
         try {
-            if (table.getMode() == Mode.LIGHT) { // if it's light mode we need to put a new line on the end
-                String tablePath = table.getTablePath(partition);
-                // fileUtil.writeBytes(tablePath, fileUtil.fileSize(tablePath), "\n".getBytes(StandardCharsets.UTF_8));
+            
+            if (table.getMode() != Mode.LIGHT) {
+                List<WritePackage> writePackages = deletedRows.stream()
+                .map(row -> {
+                    Route route = row.getLocationInTable();
+                    String rowString = Row.serialize(table, row.getColumnsToValues()) + "\n";
+                    byte[] bytes = rowString.getBytes(StandardCharsets.UTF_8);
+
+                    return new WritePackage(
+                        route.getOffsetInTable(),
+                        bytes
+                    );
+                })
+                .toList();
+
+                fileUtil.writeBytes(
+                    table.getTablePath(partition),
+                    writePackages
+                );
             }
-            AtomicReference<Long> offset = new AtomicReference<>(
-                fileUtil.fileSize(table.getTablePath(partition))
-            );
-            List<WritePackage> writePackages = rows.stream()
+            else if (deletedRows.size() > 0) {
+                // if light mode, all the rows are logged in the rollback log before the delete is performed. So we just write
+                // back out whatever was logged
+                fileUtil.deleteFile(
+                    table.getTablePath(partition)
+                );
+
+                table.initTableCsv(partition);
+                AtomicReference<Long> offset = new AtomicReference<>(
+                    fileUtil.fileSize(table.getTablePath(partition))
+                );
+                List<WritePackage> writePackages = deletedRows.stream()
                 .map(row -> {
                     Route route = row.getLocationInTable();
                     String rowString = Row.serialize(table, row.getColumnsToValues()) + "\n";
@@ -510,10 +545,12 @@ public class Batch {
                 })
                 .toList();
 
-            fileUtil.writeBytes(
-                table.getTablePath(partition),
-                writePackages
-            );
+                fileUtil.writeBytes(
+                    table.getTablePath(partition),
+                    writePackages
+                );
+            }
+
         } catch (IOException e) {
             throw new DavaException(ROLLBACK_ERROR, "Error adding back rows rolling back failed delete", e);
         }
@@ -586,14 +623,14 @@ public class Batch {
         this.indexPathToIndicesWritten = indexPathToIndicesWritten;
     }
 
-    public List<Row> getRows() {
-        return rows;
+    public List<Row> getDeletedRows() {
+        return deletedRows;
     }
 
-    public void setRows(List<Row> rows) {
-        this.rows = rows;
+    public void setDeletedRows(List<Row> rows) {
+        this.deletedRows = rows;
     }
-
+    
     public long getOldTableSize() {
         return oldTableSize;
     }
@@ -625,5 +662,15 @@ public class Batch {
     public void setNumericCountFileChanges(Map<String, CountChange> numericCountFileChanges) {
         this.numericCountFileChanges = numericCountFileChanges;
     }
+
+    public List<Row> getAllRows() {
+        return allRows;
+    }
+
+    public void setAllRows(List<Row> allRows) {
+        this.allRows = allRows;
+    }
+
+
 
 }

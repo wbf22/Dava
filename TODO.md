@@ -5,10 +5,8 @@
 - figure out how to include java docs in deploy
 - build jar and deploy to github packages
 - handle partial lines in rollbacks
-- cache won't work currently with concurrency
-- ensure rollback of partial writes work
-- get rid of fileutil cache (slower)
 - try top level query cache instead
+- ensure rollback of partial writes work
 
 
 # Todo
@@ -39,6 +37,8 @@
 - Add transactions. Pass a value in inserts or updates to tell database to append rollback strings instead of overwriting
 - On restart after crash, scan numeric partitions for any partially complete repartitions and finish the work
 - Also log numeric rollback stuff to a seperate file
+- get rid of fileutil cache (slower)
+- cache won't work currently with concurrency
 
 
 

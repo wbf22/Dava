@@ -5,11 +5,12 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-import org.dava.core.database.service.fileaccess.CheckedSupplier;
+import org.dava.core.database.service.caching.CheckedSupplier;
 
 /**
  * Class for maintaining a cache of time sensitive operations.
  */
+@Deprecated
 public class Cache {
 
     private static final int MAX_CACHE_SIZE = 1000000;

@@ -52,7 +52,17 @@ public class Delete {
         Map<String, Batch> deleteBatchesByPartition = table.getPartitions().parallelStream()
             .map(partition -> {
                 Batch batch = new Batch();
-                batch.setRows(rows);
+                batch.setDeletedRows(rows);
+
+                // for light mode we store all the rows in the table
+                if(table.getMode() == Mode.LIGHT) {
+                    batch.setAllRows(
+                        BaseOperationService.getAllRowsInTablePartitionWithoutIndicies(
+                            table,
+                            partition
+                        )
+                    );
+                }
 
                 // TODO, on light mode neither of these should be needed
                 // determine old table size
@@ -108,7 +118,7 @@ public class Delete {
         // whitespace rows in table and add routes to empties
         List<WritePackage> overwritePackages = new ArrayList<>();
         List<Object> emptiesWrites = new ArrayList<>();
-        batch.getRows().forEach( row -> {
+        batch.getDeletedRows().forEach( row -> {
             Route location = row.getLocationInTable();
             byte[] whitespaceBytes = Table.getWhitespaceBytes(location.getLengthInTable());
             overwritePackages.add(
@@ -135,7 +145,7 @@ public class Delete {
         }
 
         // update table size
-        table.setSize(partition, batch.getOldTableSize() - batch.getRows().size());
+        table.setSize(partition, batch.getOldTableSize() - batch.getDeletedRows().size());
 
         // delete indices
         batch.getIndexPathToInvalidRoutes().entrySet().parallelStream()
@@ -165,7 +175,7 @@ public class Delete {
     private void performDeleteLightMode(Batch batch, String partition) {
 
         // get all rows, and filter by ones in the delete
-        List<String> deleteRows = batch.getRows().stream()
+        List<String> deleteRows = batch.getDeletedRows().stream()
             .map( row -> Row.serialize(table, row.getColumnsToValues()) )
             .toList();
 

@@ -1,9 +1,9 @@
 package org.dava.api;
 
-import org.dava.api.annotations.PrimaryKey;
 import org.dava.api.annotations.Query;
 import org.dava.core.database.objects.exception.DavaException;
 import org.dava.core.database.service.MarshallingService;
+import org.dava.core.database.service.caching.Cache;
 import org.dava.core.database.service.operations.Delete;
 import org.dava.core.database.service.operations.Insert;
 import org.dava.core.database.service.structure.Database;
@@ -26,7 +26,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import javax.xml.crypto.Data;
 
 import static org.dava.core.common.Checks.safeCastParameterized;
 import static org.dava.core.database.objects.exception.ExceptionType.REPOSITORY_ERROR;
@@ -36,13 +35,15 @@ public class Repository<T, ID> {
 
     private Database database;
     private Table<T> table;
+    private Cache cache;
+    private String tableName;
 
 
 
     public Repository (Database database){
         this.database = database;
-        String tableName = this.getClass().getTypeParameters()[0].getClass().getName();
-        this.table = safeCastParameterized(database.getTableByName(tableName), Table.class);
+        this.tableName = this.getClass().getTypeParameters()[0].getClass().getName();
+        this.table = safeCastParameterized(database.getTableByName(this.tableName), Table.class);
     }
 
 
@@ -54,14 +55,16 @@ public class Repository<T, ID> {
      * @return returns the record or null if not found
      */
     public T findById(ID primaryKey) {
-        String columnName = MarshallingService.getPrimaryKeyField(table.getTableClass()).getName();
-    
-        Equals equals = new Equals(columnName, primaryKey.toString());
+        return cache.get(this.tableName, Cache.hash("findById", primaryKey), () -> {
+            String columnName = MarshallingService.getPrimaryKeyField(table.getTableClass()).getName();
         
-        return equals.retrieve(table, List.of(), null, null).stream()
-            .map(row -> MarshallingService.parseObject(row, table.getTableClass()))
-            .findFirst()
-            .orElse(null);
+            Equals equals = new Equals(columnName, primaryKey.toString());
+            
+            return equals.retrieve(table, List.of(), null, null).stream()
+                .map(row -> MarshallingService.parseObject(row, table.getTableClass()))
+                .findFirst()
+                .orElse(null);
+        });
     }
 
     /**
@@ -71,20 +74,22 @@ public class Repository<T, ID> {
      * @return returns all records found
      */
     public T findAllById(List<ID> primaryKeys) {
+        return cache.get(this.tableName, Cache.hash("findById", Cache.hashList(primaryKeys)), () -> {
+            String columnName = MarshallingService.getPrimaryKeyField(table.getTableClass()).getName();
 
-        String columnName = MarshallingService.getPrimaryKeyField(table.getTableClass()).getName();
-
-        In in = new In(
-            primaryKeys.stream()
-                .map(Objects::toString)
-                .collect(Collectors.toSet()), 
-            columnName
-        );
-    
-        return in.retrieve(table, List.of(), null, null).stream()
-            .map(row -> MarshallingService.parseObject(row, table.getTableClass()))
-            .findFirst()
-            .orElse(null);
+            In in = new In(
+                primaryKeys.stream()
+                    .map(Objects::toString)
+                    .collect(Collectors.toSet()), 
+                columnName
+            );
+        
+            return in.retrieve(table, List.of(), null, null).stream()
+                .map(row -> MarshallingService.parseObject(row, table.getTableClass()))
+                .findFirst()
+                .orElse(null);
+        });
+        
     }
 
     /**
@@ -95,12 +100,14 @@ public class Repository<T, ID> {
      * @return 
      */
     public List<T> findByColumn(String columnName, String value) {
+        return cache.get("findByColumn", Cache.hash(columnName, value), () -> {
+            Equals equals = new Equals(columnName, value);
+            
+            return equals.retrieve(table, List.of(), null, null).stream()
+                .map(row -> MarshallingService.parseObject(row, table.getTableClass()))
+                .toList();
+        });
         
-        Equals equals = new Equals(columnName, value);
-        
-        return equals.retrieve(table, List.of(), null, null).stream()
-            .map(row -> MarshallingService.parseObject(row, table.getTableClass()))
-            .toList();
     }
 
     /**
@@ -108,12 +115,13 @@ public class Repository<T, ID> {
      * @return
      */
     public List<T> findAll() {
-
-        All all = new All();
-
-        return all.retrieve(table, List.of(), null, null).stream()
-            .map(row -> MarshallingService.parseObject(row, table.getTableClass()))
-            .toList();
+        return cache.get(this.tableName, Cache.hash("findAll"), () -> {
+            All all = new All();
+    
+            return all.retrieve(table, List.of(), null, null).stream()
+                .map(row -> MarshallingService.parseObject(row, table.getTableClass()))
+                .toList();
+        });
     }
 
     /**
@@ -134,9 +142,12 @@ public class Repository<T, ID> {
             Thread.currentThread().getStackTrace()
         );
 
-        Select select = SqlService.parse(query, table);
-
-        return select.retrieve();
+        return cache.get(this.tableName, Cache.hash(query, Cache.hashMap(params)), () -> {
+            
+            Select select = SqlService.parse(query, table);
+        
+            return select.retrieve();
+        });
     }
 
     private String getQueryFromCaller(StackTraceElement[] stackTrace) {
@@ -148,7 +159,7 @@ public class Repository<T, ID> {
             }
         }
         throw new DavaException(REPOSITORY_ERROR, "Tried to invoke Repository<T, ID>.query() " +
-                                    "in a method without an @Query annotation", null);
+                                    "in a method without a Dava @Query annotation", null);
     }
 
     private Method getCallingMethod(StackTraceElement[] stackTrace) {
@@ -187,20 +198,31 @@ public class Repository<T, ID> {
      */
     public <Q> List<T> findByProvidedFields(Q objectWithSomeFields) {
 
-        List<Condition> equals = new ArrayList<>();
+        return cache.get(this.tableName, Cache.hash("findByProvidedFields", Cache.hashList(getFieldNames(objectWithSomeFields))), () -> {
+            List<Condition> equals = new ArrayList<>();
 
-        for (Field field : objectWithSomeFields.getClass().getFields()) {
-            equals.add(
-                new Equals(field.getName(), MarshallingService.getFieldValue(objectWithSomeFields, field).toString())
-            );
-        }
+            for (Field field : objectWithSomeFields.getClass().getFields()) {
+                equals.add(
+                    new Equals(field.getName(), MarshallingService.getFieldValue(objectWithSomeFields, field).toString())
+                );
+            }
 
-        Condition first = equals.remove(equals.size() - 1);
+            Condition first = equals.remove(equals.size() - 1);
 
-        return first.retrieve(table, equals, null, null).stream()
-            .map(row -> MarshallingService.parseObject(row, table.getTableClass()))
-            .toList();
+            return first.retrieve(table, equals, null, null).stream()
+                .map(row -> MarshallingService.parseObject(row, table.getTableClass()))
+                .toList();
+        });
     }
+
+    private List<String> getFieldNames(Object object) {
+        List<String> fieldNames = new ArrayList<>();
+        for (Field field : object.getClass().getFields()) {
+            fieldNames.add(field.getName());
+        }
+        return fieldNames;
+    }
+
 
     /**
      * Saves the object and any sub objects into their respective tables. If one of the fields
@@ -213,6 +235,8 @@ public class Repository<T, ID> {
      */
     public void save(T row) {
 
+        cache.invalidate(tableName);
+
         Map<String, List<Row>> tableNameToRows = MarshallingService.parseRow(row);
 
         for (String tableName : tableNameToRows.keySet()) {
@@ -222,6 +246,8 @@ public class Repository<T, ID> {
                 tableNameToRows.get(tableName), true
             );
         }
+
+
         
     }
 
@@ -235,6 +261,7 @@ public class Repository<T, ID> {
      * @param row
      */
     public void saveAll(List<T> rows) {
+        cache.invalidate(tableName);
 
         Map<String, List<Row>> tableNameToRows = new HashMap<>();
 
@@ -254,6 +281,7 @@ public class Repository<T, ID> {
     }
 
     private void saveRows(Map<String, List<Row>> tableNameToRows) {
+
         for (String tableName : tableNameToRows.keySet()) {
             Table<?> tableOfRow = database.getTableByName(tableName);
             Insert insert = new Insert(database, tableOfRow, tableOfRow.getRandomPartition());
@@ -271,6 +299,8 @@ public class Repository<T, ID> {
      */
     public void delete(ID primaryKey, boolean cascade) {
 
+        cache.invalidate(tableName);
+
         Equals equals = new Equals(MarshallingService.getPrimaryKeyField(table.getTableClass()).getName(), primaryKey.toString());
         List<Row> rows = equals.retrieve(table, List.of(), null, null);
 
@@ -283,6 +313,8 @@ public class Repository<T, ID> {
      * @param cascade wether or not sub object (or other table references) should be deleted as well.
      */
     public void deleteAll(List<ID> primaryKeys, boolean cascade) {
+
+        cache.invalidate(tableName);
 
         String primaryKeyFieldName = MarshallingService.getPrimaryKeyField(table.getTableClass()).getName();
         In in = new In(

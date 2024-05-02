@@ -703,8 +703,6 @@ public class BaseOperationService {
             return null;
         }
 
-        EmptiesPackage emptiesPackages = new EmptiesPackage();
-
         byte[] bytes = fileUtil.readBytes(emptiesFile);
         return Route.parseBytes(
             ArrayUtil.subRange(bytes, 8, bytes.length),
