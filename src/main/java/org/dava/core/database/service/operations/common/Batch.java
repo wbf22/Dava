@@ -15,9 +15,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import static org.dava.core.database.objects.exception.ExceptionType.ROLLBACK_ERROR;
+import static org.dava.core.database.objects.exception.ExceptionType.*;
 
 public class Batch {
 
@@ -34,6 +35,7 @@ public class Batch {
     private Map<String, IndexDelete> indexPathToInvalidRoutes;
 
     // shared
+    private String partition;
     private Long oldTableSize;
     private Map<String, CountChange> numericCountFileChanges;
 
@@ -52,7 +54,6 @@ public class Batch {
         this.numericCountFileChanges = new HashMap<>();
     }
 
-    
     public static Batch parse(List<String> lines, Table<?> table, String partition) {
         Map<String, List<IndexWritePackage>> writeGroups = new HashMap<>();
         List<RowWritePackage> rowsWritten = new ArrayList<>();
@@ -592,6 +593,206 @@ public class Batch {
         });
 
     }
+
+
+    public void execute(Table<?> table, boolean replaceRollbackFile) {
+        logRollback(table, replaceRollbackFile);
+
+
+
+        // add new rows, and delete rows to delete
+        String tablePath = table.getTablePath(partition);
+        long newTableSize = 0L;
+        try {
+
+            if (table.getMode() == Mode.LIGHT) {
+                if (!deletedRows.isEmpty())
+                    newTableSize = insertAndDeleteRowsInLightMode(table, tablePath);
+                else
+                    newTableSize = appendInsertRowsLightMode(table, tablePath);
+            }
+            else {
+                newTableSize = writeInsertsAndWhitespaceDeletesAndEmpties(table, tablePath);
+            }
+
+
+            // update table row count in empties
+            table.setSize(partition, newTableSize);
+
+        } catch (IOException e) {
+            throw new DavaException(
+                BASE_IO_ERROR,
+                "Error writing rows or deleteing rows in table at: " + tablePath,
+                e
+            );
+        }
+
+        // update indices (if not light mode)
+        if (table.getMode() != Mode.LIGHT) {
+
+            // update numeric count files
+            numericCountFileChanges.forEach( (countFile, countChange) -> {
+                String folderPath = countFile.replace("/c.count", "");
+                BaseOperationService.updateNumericCountFile(folderPath, countChange.getChange());
+            });
+
+            // reinit table leaves if a numeric repartition occurred
+            if (!numericCountFileChanges.isEmpty()) {
+                table.initColumnLeaves();
+            }
+
+
+            indexPathToIndicesWritten.forEach( (indexPath, indexPackages) -> {
+                IndexWritePackage first = indexPackages.get(0);
+                String folderPath = first.getFolderPath();
+                Object value = first.getValue();
+                Column<?> column = table.getColumn(first.getColumnName());
+                BaseOperationService.addToIndex(folderPath, value, indexPackages, column.isUnique());
+            });
+
+            indexPathToInvalidRoutes.entrySet().parallelStream()
+                .forEach( entry -> {
+                    // XXX replace this popBytes call with one that popbytes multiple bytes in one file read.
+                    try {
+                        String indexPath = entry.getKey();
+                        IndexDelete indexDelete = entry.getValue();
+
+                        long newSize = fileUtil.popBytes(indexPath, 10, indexDelete.getIndicesToDelete());
+                        if (newSize == 0)
+                            fileUtil.deleteFile(indexPath); // this is important as during rollbacks table counts are updated by the number of primary key index files
+
+                    } catch (IOException e) {
+                        throw new DavaException(BASE_IO_ERROR, "Error updating indices after delete", e);
+                    }
+                });
+        }
+        
+        
+    }
+
+
+    private void logRollback(Table<?> table, boolean replaceRollbackFile) {
+        try {
+
+            String rollbackLogPath = table.getRollbackPath(partition);
+            String logString = makeRollbackString(table, partition);
+            
+            if (replaceRollbackFile)
+                fileUtil.replaceFile(rollbackLogPath, logString.getBytes(StandardCharsets.UTF_8) );
+            else
+                fileUtil.writeBytesAppend(rollbackLogPath, logString.getBytes(StandardCharsets.UTF_8) );
+        } catch (IOException e) {
+            throw new DavaException(ROLLBACK_ERROR, "Error writing to rollback log", e);
+        }
+    }
+
+    private long insertAndDeleteRowsInLightMode(Table<?> table, String tablePath) throws IOException {
+
+        // get all rows, and filter by ones in the delete
+
+        List<Row> allNewRows = BaseOperationService.getAllRowsInTablePartitionWithoutIndicies(
+            table,
+            partition
+        ).stream()
+            .filter( row ->
+                deletedRows.stream()
+                    .map( deleteRow -> !row.equals(deleteRow) )
+                    .reduce(Boolean::logicalAnd)
+                    .orElse(true)
+            )
+            .toList();
+
+        // add rows being inserted
+        allNewRows.addAll(
+            rowsWritten.stream()
+                .map(RowWritePackage::getRow)
+                .toList()
+        );
+
+        String newRowsAsString = allNewRows.stream()
+            .map(row -> Row.serialize(table, row.getColumnsToValues()))
+            .collect(Collectors.joining("\n")) + "\n";
+
+        // delete the old file and write all rows back
+        fileUtil.deleteFile(tablePath);
+
+        table.initTableCsv(partition);
+
+        long offset = fileUtil.fileSize(tablePath);
+        fileUtil.writeBytes(tablePath, offset, newRowsAsString.getBytes(StandardCharsets.UTF_8));
+
+        // return new table size
+        return allNewRows.size();
+    }
+
+    private long appendInsertRowsLightMode(Table<?> table, String tablePath) throws IOException {
+        // append rows being inserted to the table (if non are being deleted)
+        fileUtil.writeBytes(
+            tablePath,
+            (List<WritePackage>) (List<?>) rowsWritten
+        );
+
+        // update table row count in empties
+        return oldTableSize + rowsWritten.size();
+    }
+
+    private long writeInsertsAndWhitespaceDeletesAndEmpties(Table<?> table, String tablePath) throws IOException {
+        // collect rows to write, and rows to whitespace out or 'delete'
+        List<WritePackage> writePackages = new ArrayList<>();
+        List<Object> emptiesWrites = new ArrayList<>();
+
+        // add insert rows
+        writePackages.addAll(rowsWritten);
+
+        // add whitespace rows for delete (and add to empty writes)
+        deletedRows.forEach( row -> {
+            Route location = row.getLocationInTable();
+            byte[] whitespaceBytes = Table.getWhitespaceBytes(location.getLengthInTable());
+            writePackages.add(
+                new WritePackage(location.getOffsetInTable(), whitespaceBytes)
+            );
+
+            emptiesWrites.add(
+                location.getRouteAsBytes()
+            );
+        });
+
+        fileUtil.writeBytes(
+            tablePath,
+            writePackages
+        );
+
+        // write empties to empties file
+        fileUtil.writeBytesAppend(
+            table.emptiesFilePath(partition),
+            ArrayUtil.appendArrays(emptiesWrites, 10)
+        );
+
+
+        // remove used empties from tables
+        try {
+            BaseOperationService.popRoutes(
+                table.emptiesFilePath(partition),
+                usedTableEmtpies.getUsedEmpties()
+                    .values()
+                    .stream().flatMap(Collection::stream)
+                    .map(Empty::getIndex)
+                    .toList()
+            );
+        } catch (IOException e) {
+            throw new DavaException(
+                BASE_IO_ERROR,
+                "Error removing empty in table meta file: " + table.emptiesFilePath(partition),
+                e
+            );
+        }
+
+        return oldTableSize + rowsWritten.size() - deletedRows.size();
+    }
+
+
+
+
 
 
 

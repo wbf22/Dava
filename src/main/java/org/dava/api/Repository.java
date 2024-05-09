@@ -6,6 +6,7 @@ import org.dava.core.database.service.MarshallingService;
 import org.dava.core.database.service.caching.Cache;
 import org.dava.core.database.service.operations.Delete;
 import org.dava.core.database.service.operations.Insert;
+import org.dava.core.database.service.operations.common.Batch;
 import org.dava.core.database.service.structure.Database;
 import org.dava.core.database.service.structure.Row;
 import org.dava.core.database.service.structure.Table;
@@ -243,7 +244,7 @@ public class Repository<T, ID> {
             Table<?> tableOfRow = database.getTableByName(tableName);
             Insert insert = new Insert(database, tableOfRow, tableOfRow.getRandomPartition());
             insert.insert(
-                tableNameToRows.get(tableName), true
+                tableNameToRows.get(tableName), true, new Batch()
             );
         }
 
@@ -286,7 +287,7 @@ public class Repository<T, ID> {
             Table<?> tableOfRow = database.getTableByName(tableName);
             Insert insert = new Insert(database, tableOfRow, tableOfRow.getRandomPartition());
             insert.insert(
-                tableNameToRows.get(tableName), true
+                tableNameToRows.get(tableName), true, new Batch()
             );
         }
     }
@@ -331,14 +332,14 @@ public class Repository<T, ID> {
     private void deleteRows(List<Row> rows, boolean cascade) {
 
         Delete delete = new Delete(database, table);
-        delete.delete(rows, true);
+        delete.delete(rows, true, new Batch());
 
         if (cascade) {
             Map<String, List<Row>> childRows = getRowsOfAllSubObjects(rows, null);
             for (String tableName : childRows.keySet()) {
                 Table<?> rowTable = database.getTableByName(tableName);
                 Delete childDelete = new Delete(database, rowTable);
-                childDelete.delete(childRows.get(tableName), true);
+                childDelete.delete(childRows.get(tableName), true, new Batch());
             }
         }
     }

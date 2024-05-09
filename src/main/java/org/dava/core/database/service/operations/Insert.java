@@ -55,7 +55,7 @@ public class Insert {
      * @param rows
      * @param replaceRollbackFile
      */
-    public void insert(List<Row> rows, boolean replaceRollbackFile) {
+    public void insert(List<Row> rows, boolean replaceRollbackFile, Batch batch) {
         // TODO instead of using one partition, use multiple to be able to do all this in parallel
 
         this.rowEmpties = table.getEmptyRows(partition);
@@ -64,28 +64,28 @@ public class Insert {
         List<RowWritePackage> rowWritePackages = makeWritePackages(rows);
 
         // build batch
-        Batch writeInsertBatch = groupIndexWrites(database, table, rowWritePackages);
+        groupIndexWrites(batch, database, table, rowWritePackages);
         if (table.getMode() != Mode.LIGHT) {
-            writeInsertBatch.setUsedTableEmtpies(this.rowEmpties);
+            batch.setUsedTableEmtpies(this.rowEmpties);
         }
-        writeInsertBatch.setRowsWritten(rowWritePackages);
-        writeInsertBatch.setOldTableSize( table.getSize(partition) );
+        batch.setRowsWritten(rowWritePackages);
+        batch.setOldTableSize( table.getSize(partition) );
 
         // repartition numeric indices (this is a write, but is done safely, repartitions aren't rolled back)
         try {
             Map<String, List<IndexWritePackage>> updatedWritePackages =
-                repartitionNumericIndices(table, partition, writeInsertBatch, replaceRollbackFile);
-            writeInsertBatch.setIndexPathToIndicesWritten(updatedWritePackages);
+                repartitionNumericIndices(table, partition, batch, replaceRollbackFile);
+                batch.setIndexPathToIndicesWritten(updatedWritePackages);
         } catch(Exception e) {
             // the repartition fails itself, then we determine how to finish it (can undo what was done or finish it)
             Rollback.handleNumericRepartitionFailure(table, partition);
         }
         
         // build and log rollback
-        logRollback(writeInsertBatch.makeRollbackString(table, partition), table.getRollbackPath(partition), replaceRollbackFile);
+        logRollback(batch.makeRollbackString(table, partition), table.getRollbackPath(partition), replaceRollbackFile);
 
         // perform insert
-        performInsert(writeInsertBatch);
+        performInsert(batch);
     }
 
     private void logRollback(String logString, String rollbackLogPath, boolean replaceRollbackFile) {
@@ -238,8 +238,7 @@ public class Insert {
             .toList();
     }
 
-    private Batch groupIndexWrites(Database database, Table<?> table, List<RowWritePackage> writePackages) {
-        Batch insertBatch = new Batch();
+    private void groupIndexWrites(Batch batch, Database database, Table<?> table, List<RowWritePackage> writePackages) {
         Map<String, CountChange> countUpdates = new HashMap<>();
         Set<String> countedIndexPaths = new HashSet<>();
         writePackages.forEach( writePackage -> {
@@ -270,7 +269,7 @@ public class Insert {
                     }
 
                     // add to batch
-                    insertBatch.addIndexWritePackage(
+                    batch.addIndexWritePackage(
                         indexPath,
                         new IndexWritePackage(
                             writePackage.getRoute(),
@@ -283,8 +282,7 @@ public class Insert {
             }
         });
 
-        insertBatch.setNumericCountFileChanges(countUpdates);
-        return insertBatch;
+        batch.setNumericCountFileChanges(countUpdates);
     }
 
 

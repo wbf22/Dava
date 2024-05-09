@@ -10,6 +10,7 @@ import org.dava.core.database.objects.dates.OffsetDate;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.operations.Delete;
 import org.dava.core.database.service.operations.Insert;
+import org.dava.core.database.service.operations.common.Batch;
 import org.dava.core.database.service.structure.*;
 import org.dava.core.sql.conditions.After;
 import org.dava.core.sql.conditions.All;
@@ -62,7 +63,7 @@ class BasicOperationsTest {
         });
 
         Insert insert = new Insert(database, table, table.getRandomPartition());
-        insert.insert(rows, true);
+        insert.insert(rows, true, new Batch());
 
         log.info("Seed: " + seed);
 
@@ -136,7 +137,7 @@ class BasicOperationsTest {
         Insert insert = new Insert(database, table, table.getRandomPartition());
 
         Timer timer = Timer.start();
-        insert.insert(rows, true);
+        insert.insert(rows, true, new Batch());
         timer.printRestart();
 
         long size = table.getSize(table.getRandomPartition());
@@ -253,7 +254,7 @@ class BasicOperationsTest {
 
         Delete delete = new Delete(database, table);
         Timer timer = Timer.start();
-        delete.delete(rows, true);
+        delete.delete(rows, true, new Batch());
         timer.printRestart();
 
         List<Row> afterRows = equals.retrieve(table, new ArrayList<>(), null, null);
@@ -274,7 +275,7 @@ class BasicOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
-        insert.insert(rows, true);
+        insert.insert(rows, true, new Batch());
 
         // get all rows
         List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
@@ -314,7 +315,7 @@ class BasicOperationsTest {
         Equals equals = new Equals("discount", "1");
         List<Row> rows = equals.retrieve(table, new ArrayList<>(), null, null);
         Delete delete = new Delete(database, table);
-        delete.delete(rows, true);
+        delete.delete(rows, true, new Batch());
 
         // rollback
         Timer timer = Timer.start();

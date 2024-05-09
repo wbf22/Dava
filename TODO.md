@@ -4,9 +4,8 @@
 - Implement Rollback operations
 - figure out how to include java docs in deploy
 - build jar and deploy to github packages
-- handle partial lines in rollbacks
 - try top level query cache instead
-- ensure rollback of partial writes work
+- combine Insert and delete operations into batch class
 
 
 # Todo
@@ -39,6 +38,8 @@
 - Also log numeric rollback stuff to a seperate file
 - get rid of fileutil cache (slower)
 - cache won't work currently with concurrency
+- handle partial lines in rollbacks
+- ensure rollback of partial writes work
 
 
 

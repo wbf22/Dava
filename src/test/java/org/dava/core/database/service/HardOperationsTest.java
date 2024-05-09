@@ -11,6 +11,7 @@ import org.dava.core.database.objects.exception.ExceptionType;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.operations.Delete;
 import org.dava.core.database.service.operations.Insert;
+import org.dava.core.database.service.operations.common.Batch;
 import org.dava.core.database.service.operations.common.WritePackage;
 import org.dava.core.database.service.structure.*;
 import org.dava.core.sql.conditions.After;
@@ -78,7 +79,7 @@ class HardOperationsTest {
         });
 
         Insert insert = new Insert(database, table, table.getRandomPartition());
-        insert.insert(rows, true);
+        insert.insert(rows, true, new Batch());
 
         log.info("Seed: " + seed);
 
@@ -160,7 +161,7 @@ class HardOperationsTest {
         List<Row> rows = before.retrieve(table, new ArrayList<>(), null, null);
 
         Delete delete = new Delete(database, table);
-        delete.delete(rows, true);
+        delete.delete(rows, true, new Batch());
 
 
         Equals equals = new Equals("discount", "4");
@@ -226,7 +227,7 @@ class HardOperationsTest {
             );
 
         try {
-            insert.insert(rows, true);
+            insert.insert(rows, true, new Batch());
         } catch (DavaException e) {
             log.trace("caught");
         }
@@ -292,7 +293,7 @@ class HardOperationsTest {
 
 
         try {
-            insert.insert(rows, true);
+            insert.insert(rows, true, new Batch());
         } catch (DavaException e) {
             log.trace("caught");
         }
@@ -342,13 +343,13 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
-        insert.insert(firstInsertRows, true);
+        insert.insert(firstInsertRows, true, new Batch());
 
         // do delete
         Equals equals = new Equals("discount", "1");
         List<Row> rowsToDelete = equals.retrieve(table, new ArrayList<>(), null, null);
         Delete delete = new Delete(database, table);
-        delete.delete(rowsToDelete, true);
+        delete.delete(rowsToDelete, true, new Batch());
 
         long intialSize = table.getSize(partition);
 
@@ -358,7 +359,7 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert secondInsert = new Insert(database, table, partition);
-        secondInsert.insert(secondInsertRows, true);
+        secondInsert.insert(secondInsertRows, true, new Batch());
 
         // assert table is the correct size after second insert
         long size = table.getSize(partition);
@@ -411,14 +412,14 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
-        insert.insert(firstInsertRows, true);
+        insert.insert(firstInsertRows, true, new Batch());
 
 
         // do delete
         Equals equals = new Equals("discount", "1");
         List<Row> rowsToDelete = equals.retrieve(table, new ArrayList<>(), null, null);
         Delete delete = new Delete(database, table);
-        delete.delete(rowsToDelete, true);
+        delete.delete(rowsToDelete, true, new Batch());
 
 
         long intialSize = table.getSize(partition);
@@ -429,7 +430,7 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert secondInsert = new Insert(database, table, partition);
-        secondInsert.insert(secondInsertRows, true);
+        secondInsert.insert(secondInsertRows, true, new Batch());
 
 
         // rollback
@@ -470,7 +471,7 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
-        insert.insert(firstInsertRows, true);
+        insert.insert(firstInsertRows, true, new Batch());
 
 
 
@@ -523,7 +524,7 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
-        insert.insert(firstInsertRows, true);
+        insert.insert(firstInsertRows, true, new Batch());
 
         long intialSize = table.getSize(partition);
 
@@ -534,14 +535,14 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         insert = new Insert(database, table, partition);
-        insert.insert(transactionInsertRows, true);
+        insert.insert(transactionInsertRows, true, new Batch());
 
 
         // do delete
         Equals equals = new Equals("discount", "1");
         List<Row> rowsToDelete = equals.retrieve(table, new ArrayList<>(), null, null);
         Delete delete = new Delete(database, table);
-        delete.delete(rowsToDelete, false);
+        delete.delete(rowsToDelete, false, new Batch());
 
         // rollback transaction (2nd insert and delete operation)
         Timer timer = Timer.start();
@@ -589,7 +590,7 @@ class HardOperationsTest {
         );
 
         try {
-            insert.insert(rows, true);
+            insert.insert(rows, true, new Batch());
         } catch (DavaException e) {
             log.trace("caught");
         }
@@ -648,7 +649,7 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
-        insert.insert(firstInsertRows, true);
+        insert.insert(firstInsertRows, true, new Batch());
 
         // do insert
         List<Row> rows = makeRows(seed + ITERATIONS + ITERATIONS, INSERT_ITERATIONS);
@@ -669,7 +670,7 @@ class HardOperationsTest {
 
 
         try {
-            insert2.insert(rows, false);
+            insert2.insert(rows, false, new Batch());
         } catch (DavaException e) {
             log.trace("caught");
         }
@@ -719,14 +720,14 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
-        insert.insert(firstInsertRows, true);
+        insert.insert(firstInsertRows, true, new Batch());
 
         List<Row> secondInsertRows = makeRows(seed + ITERATIONS + ITERATIONS, INSERT_ITERATIONS);
         secondInsertRows.forEach(row -> {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert2 = new Insert(database, table, partition);
-        insert2.insert(secondInsertRows, false);
+        insert2.insert(secondInsertRows, false, new Batch());
 
 
         // get all rows
@@ -770,7 +771,7 @@ class HardOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
-        insert.insert(firstInsertRows, true);
+        insert.insert(firstInsertRows, true, new Batch());
 
         // do insert
         List<Row> rows = makeRows(seed + ITERATIONS + ITERATIONS, INSERT_ITERATIONS);
@@ -790,7 +791,7 @@ class HardOperationsTest {
 
 
         try {
-            insert2.insert(rows, false);
+            insert2.insert(rows, false, new Batch());
         } catch (DavaException e) {
             log.trace("caught");
         }
@@ -887,7 +888,7 @@ class HardOperationsTest {
             );
 
         try {
-            insert.insert(rows, true);
+            insert.insert(rows, true, new Batch());
         } catch (DavaException e) {
             log.trace("caught");
         }
@@ -978,7 +979,7 @@ class HardOperationsTest {
             Delete delete = new Delete(database, table);
             delete.fileUtil = spyFileUtil;
 
-            delete.delete(rowsToDelete, true);
+            delete.delete(rowsToDelete, true, new Batch());
         } catch (DavaException e) {
             log.trace("caught");
         }

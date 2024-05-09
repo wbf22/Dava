@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
@@ -48,10 +49,19 @@ public class Delete {
      * @param rows
      * @param replaceRollbackFile
      */
-    public void delete(List<Row> rows, boolean replaceRollbackFile) {
+    public void delete(List<Row> rows, boolean replaceRollbackFile, Batch existingBatch) {
+        AtomicBoolean existingBatchIncorporated = new AtomicBoolean(false);
+
         Map<String, Batch> deleteBatchesByPartition = table.getPartitions().parallelStream()
             .map(partition -> {
                 Batch batch = new Batch();
+                synchronized (existingBatchIncorporated) {
+                    if (!existingBatchIncorporated.get()) {
+                        batch = existingBatch;
+                        existingBatchIncorporated.set(true);
+                    }
+                }
+
                 batch.setDeletedRows(rows);
 
                 // for light mode we store all the rows in the table
