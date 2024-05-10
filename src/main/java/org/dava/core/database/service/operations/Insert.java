@@ -55,7 +55,7 @@ public class Insert {
      * @param rows
      * @param replaceRollbackFile
      */
-    public void insert(List<Row> rows, boolean replaceRollbackFile, Batch batch) {
+    public Batch insert(List<Row> rows, boolean replaceRollbackFile, Batch batch) {
         // TODO instead of using one partition, use multiple to be able to do all this in parallel
 
         this.rowEmpties = table.getEmptyRows(partition);
@@ -84,8 +84,9 @@ public class Insert {
         // build and log rollback
         logRollback(batch.makeRollbackString(table, partition), table.getRollbackPath(partition), replaceRollbackFile);
 
+        return batch;
         // perform insert
-        performInsert(batch);
+        // performInsert(batch);
     }
 
     private void logRollback(String logString, String rollbackLogPath, boolean replaceRollbackFile) {
@@ -180,6 +181,7 @@ public class Insert {
                 
                 // actual repartition takes place
                 BigDecimal median = BaseOperationService.repartitionNumericIndex(folderPath, defaultMedian);
+                insertBatch.setNumericRepartitionOccured(true);
 
                 affectedIndexPaths.forEach(indexPath -> {
                     List<IndexWritePackage> writePackages = insertBatch.getIndexPathToIndicesWritten().get(indexPath);

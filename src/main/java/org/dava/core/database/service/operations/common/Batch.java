@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -38,6 +39,7 @@ public class Batch {
     private String partition;
     private Long oldTableSize;
     private Map<String, CountChange> numericCountFileChanges;
+    private boolean numericRepartitionOccured;
 
 
     public FileUtil fileUtil = new FileUtil();
@@ -596,6 +598,7 @@ public class Batch {
 
 
     public void execute(Table<?> table, boolean replaceRollbackFile) {
+        this.partition = table.getRandomPartition();
         logRollback(table, replaceRollbackFile);
 
 
@@ -631,10 +634,13 @@ public class Batch {
         if (table.getMode() != Mode.LIGHT) {
 
             // update numeric count files
-            numericCountFileChanges.forEach( (countFile, countChange) -> {
-                String folderPath = countFile.replace("/c.count", "");
-                BaseOperationService.updateNumericCountFile(folderPath, countChange.getChange());
-            });
+            if (!numericRepartitionOccured) {
+                numericCountFileChanges.forEach( (countFile, countChange) -> {
+                    String folderPath = countFile.replace("/c.count", "");
+                    BaseOperationService.updateNumericCountFile(folderPath, countChange.getChange());
+                });
+            }
+            
 
             // reinit table leaves if a numeric repartition occurred
             if (!numericCountFileChanges.isEmpty()) {
@@ -700,7 +706,7 @@ public class Batch {
                     .reduce(Boolean::logicalAnd)
                     .orElse(true)
             )
-            .toList();
+            .collect(Collectors.toList());
 
         // add rows being inserted
         allNewRows.addAll(
@@ -872,6 +878,39 @@ public class Batch {
         this.allRows = allRows;
     }
 
+    public void setOldEmptiesSize(Long oldEmptiesSize) {
+        this.oldEmptiesSize = oldEmptiesSize;
+    }
 
+    public String getPartition() {
+        return partition;
+    }
+
+    public void setPartition(String partition) {
+        this.partition = partition;
+    }
+
+    public void setOldTableSize(Long oldTableSize) {
+        this.oldTableSize = oldTableSize;
+    }
+
+    public boolean isNumericRepartitionOccured() {
+        return numericRepartitionOccured;
+    }
+
+    public void setNumericRepartitionOccured(boolean numericRepartitionOccured) {
+        this.numericRepartitionOccured = numericRepartitionOccured;
+    }
+
+    public FileUtil getFileUtil() {
+        return fileUtil;
+    }
+
+    public void setFileUtil(FileUtil fileUtil) {
+        this.fileUtil = fileUtil;
+    }
+
+
+    
 
 }

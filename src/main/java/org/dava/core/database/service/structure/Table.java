@@ -167,6 +167,7 @@ public class Table<T> {
 
 
     public void initColumnLeaves() {
+        columnLeaves.clear();
 
         partitions.forEach( partition -> {
             columns.values().forEach( column -> {

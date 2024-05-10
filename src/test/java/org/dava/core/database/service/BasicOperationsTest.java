@@ -63,7 +63,7 @@ class BasicOperationsTest {
         });
 
         Insert insert = new Insert(database, table, table.getRandomPartition());
-        insert.insert(rows, true, new Batch());
+        insert.insert(rows, true, new Batch()).execute(table, true);
 
         log.info("Seed: " + seed);
 
@@ -137,7 +137,7 @@ class BasicOperationsTest {
         Insert insert = new Insert(database, table, table.getRandomPartition());
 
         Timer timer = Timer.start();
-        insert.insert(rows, true, new Batch());
+        insert.insert(rows, true, new Batch()).execute(table, true);
         timer.printRestart();
 
         long size = table.getSize(table.getRandomPartition());
@@ -254,7 +254,7 @@ class BasicOperationsTest {
 
         Delete delete = new Delete(database, table);
         Timer timer = Timer.start();
-        delete.delete(rows, true, new Batch());
+        delete.delete(rows, true, new Batch()).execute(table, true);;
         timer.printRestart();
 
         List<Row> afterRows = equals.retrieve(table, new ArrayList<>(), null, null);
@@ -275,7 +275,7 @@ class BasicOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
-        insert.insert(rows, true, new Batch());
+        insert.insert(rows, true, new Batch()).execute(table, true);
 
         // get all rows
         List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
@@ -315,7 +315,7 @@ class BasicOperationsTest {
         Equals equals = new Equals("discount", "1");
         List<Row> rows = equals.retrieve(table, new ArrayList<>(), null, null);
         Delete delete = new Delete(database, table);
-        delete.delete(rows, true, new Batch());
+        delete.delete(rows, true, new Batch()).execute(table, true);
 
         // rollback
         Timer timer = Timer.start();

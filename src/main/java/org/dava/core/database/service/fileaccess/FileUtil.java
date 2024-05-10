@@ -471,15 +471,20 @@ public class FileUtil {
         do {
             files = files.parallelStream()
                 .flatMap( file -> {
-                    List<File> subFiles = Arrays.stream(
-                        file.listFiles()
-                    ).filter(File::isDirectory)
-                    .toList();
-
-                    if (subFiles.isEmpty()) {
+                    File[] subFiles = file.listFiles();
+                    if (subFiles == null) {
                         leaves.add(file);
+                        return new ArrayList<File>().stream();
                     }
-                    return subFiles.stream();
+                    
+                    List<File> subDirs = Arrays.stream(
+                        subFiles
+                    )
+                    .filter(File::isDirectory)
+                    .toList();
+                    if (subDirs.isEmpty())
+                        leaves.add(file);
+                    return subDirs.stream();
                 })
                 .toList();
 
