@@ -55,7 +55,7 @@ public class Insert {
      * @param rows
      * @param replaceRollbackFile
      */
-    public Batch insert(List<Row> rows, boolean replaceRollbackFile, Batch batch) {
+    public Batch addToBatch(List<Row> rows, boolean replaceRollbackFile, Batch batch) {
         // TODO instead of using one partition, use multiple to be able to do all this in parallel
 
         this.rowEmpties = table.getEmptyRows(partition);

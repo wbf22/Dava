@@ -647,15 +647,7 @@ public class Batch {
                 table.initColumnLeaves();
             }
 
-
-            indexPathToIndicesWritten.forEach( (indexPath, indexPackages) -> {
-                IndexWritePackage first = indexPackages.get(0);
-                String folderPath = first.getFolderPath();
-                Object value = first.getValue();
-                Column<?> column = table.getColumn(first.getColumnName());
-                BaseOperationService.addToIndex(folderPath, value, indexPackages, column.isUnique());
-            });
-
+            // remove indices that were deleted
             indexPathToInvalidRoutes.entrySet().parallelStream()
                 .forEach( entry -> {
                     // XXX replace this popBytes call with one that popbytes multiple bytes in one file read.
@@ -671,6 +663,16 @@ public class Batch {
                         throw new DavaException(BASE_IO_ERROR, "Error updating indices after delete", e);
                     }
                 });
+
+            
+            // add indices or new rows
+            indexPathToIndicesWritten.forEach( (indexPath, indexPackages) -> {
+                IndexWritePackage first = indexPackages.get(0);
+                String folderPath = first.getFolderPath();
+                Object value = first.getValue();
+                Column<?> column = table.getColumn(first.getColumnName());
+                BaseOperationService.addToIndex(folderPath, value, indexPackages, column.isUnique());
+            });
         }
         
         

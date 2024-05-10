@@ -243,7 +243,7 @@ public class Repository<T, ID> {
         for (String tableName : tableNameToRows.keySet()) {
             Table<?> tableOfRow = database.getTableByName(tableName);
             Insert insert = new Insert(database, tableOfRow, tableOfRow.getRandomPartition());
-            insert.insert(
+            insert.addToBatch(
                 tableNameToRows.get(tableName), true, new Batch()
             );
         }
@@ -286,7 +286,7 @@ public class Repository<T, ID> {
         for (String tableName : tableNameToRows.keySet()) {
             Table<?> tableOfRow = database.getTableByName(tableName);
             Insert insert = new Insert(database, tableOfRow, tableOfRow.getRandomPartition());
-            insert.insert(
+            insert.addToBatch(
                 tableNameToRows.get(tableName), true, new Batch()
             );
         }
@@ -332,14 +332,14 @@ public class Repository<T, ID> {
     private void deleteRows(List<Row> rows, boolean cascade) {
 
         Delete delete = new Delete(database, table);
-        delete.delete(rows, true, new Batch());
+        delete.addToBatch(rows, true, new Batch());
 
         if (cascade) {
             Map<String, List<Row>> childRows = getRowsOfAllSubObjects(rows, null);
             for (String tableName : childRows.keySet()) {
                 Table<?> rowTable = database.getTableByName(tableName);
                 Delete childDelete = new Delete(database, rowTable);
-                childDelete.delete(childRows.get(tableName), true, new Batch());
+                childDelete.addToBatch(childRows.get(tableName), true, new Batch());
             }
         }
     }

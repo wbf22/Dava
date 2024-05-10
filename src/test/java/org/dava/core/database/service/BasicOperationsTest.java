@@ -10,6 +10,7 @@ import org.dava.core.database.objects.dates.OffsetDate;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.operations.Delete;
 import org.dava.core.database.service.operations.Insert;
+import org.dava.core.database.service.operations.Update;
 import org.dava.core.database.service.operations.common.Batch;
 import org.dava.core.database.service.structure.*;
 import org.dava.core.sql.conditions.After;
@@ -63,7 +64,7 @@ class BasicOperationsTest {
         });
 
         Insert insert = new Insert(database, table, table.getRandomPartition());
-        insert.insert(rows, true, new Batch()).execute(table, true);
+        insert.addToBatch(rows, true, new Batch()).execute(table, true);
 
         log.info("Seed: " + seed);
 
@@ -137,7 +138,7 @@ class BasicOperationsTest {
         Insert insert = new Insert(database, table, table.getRandomPartition());
 
         Timer timer = Timer.start();
-        insert.insert(rows, true, new Batch()).execute(table, true);
+        insert.addToBatch(rows, true, new Batch()).execute(table, true);
         timer.printRestart();
 
         long size = table.getSize(table.getRandomPartition());
@@ -254,11 +255,39 @@ class BasicOperationsTest {
 
         Delete delete = new Delete(database, table);
         Timer timer = Timer.start();
-        delete.delete(rows, true, new Batch()).execute(table, true);;
+        delete.addToBatch(rows, true, new Batch()).execute(table, true);;
         timer.printRestart();
 
         List<Row> afterRows = equals.retrieve(table, new ArrayList<>(), null, null);
         assertEquals(0, afterRows.size());
+    }
+
+    @Test
+    void update() {
+        Table<?> table = database.getTableByName("Order");
+
+        Equals equals = new Equals("total", "25");
+        List<Row> rows = equals.retrieve(table, new ArrayList<>(), null, null);
+        List<Row> newRows = rows.stream()
+            .map(row -> {
+                Row newRow = row.copy();
+                newRow.getColumnsToValues().put("total", BigDecimal.valueOf(150));
+                return newRow;
+            })
+            .toList();
+
+        Update update = new Update(database, table);
+        Timer timer = Timer.start();
+        update.addToBatch(rows, newRows, true, new Batch()).execute(table, true);
+        timer.printRestart();
+
+        List<Row> afterRows = equals.retrieve(table, new ArrayList<>(), null, null);
+        assertEquals(0, afterRows.size());
+
+        Equals equals2 = new Equals("total", "150");
+        List<Row> afterRows2 = equals2.retrieve(table, new ArrayList<>(), null, null);
+        assertEquals(rows.size(), afterRows2.size());
+
     }
 
     @Test
@@ -275,7 +304,7 @@ class BasicOperationsTest {
             log.trace(Row.serialize(table, row.getColumnsToValues()));
         });
         Insert insert = new Insert(database, table, partition);
-        insert.insert(rows, true, new Batch()).execute(table, true);
+        insert.addToBatch(rows, true, new Batch()).execute(table, true);
 
         // get all rows
         List<Row> allRowBefore = new All().retrieve(table, List.of(), null, null);
@@ -315,7 +344,7 @@ class BasicOperationsTest {
         Equals equals = new Equals("discount", "1");
         List<Row> rows = equals.retrieve(table, new ArrayList<>(), null, null);
         Delete delete = new Delete(database, table);
-        delete.delete(rows, true, new Batch()).execute(table, true);
+        delete.addToBatch(rows, true, new Batch()).execute(table, true);
 
         // rollback
         Timer timer = Timer.start();

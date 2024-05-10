@@ -49,7 +49,7 @@ public class Delete {
      * @param rows
      * @param replaceRollbackFile
      */
-    public Batch delete(List<Row> rows, boolean replaceRollbackFile, Batch existingBatch) {
+    public Batch addToBatch(List<Row> rows, boolean replaceRollbackFile, Batch existingBatch) {
         AtomicBoolean existingBatchIncorporated = new AtomicBoolean(false);
 
         Map<String, Batch> deleteBatchesByPartition = table.getPartitions().parallelStream()

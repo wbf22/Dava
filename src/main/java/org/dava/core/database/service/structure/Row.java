@@ -17,6 +17,7 @@ public class Row {
     private Route locationInTable;
 
 
+    public Row() {}
 
     public Row(String line, Table<?> table, Route locationInTable) {
         try {
@@ -96,6 +97,19 @@ public class Row {
         this.columnsToValues = columnsToValues;
         this.tableName = tableName;
     }
+
+    public Row copy() {
+        Row row = new Row();
+        row.columnsToValues = new HashMap<>();
+        for (Entry<String, Object> entry : this.columnsToValues.entrySet()) {
+            row.columnsToValues.put(entry.getKey(), entry.getValue());
+        }
+        row.tableName = this.tableName;
+        row.locationInTable = this.locationInTable;
+
+        return row;
+    }
+
 
 
     /*
