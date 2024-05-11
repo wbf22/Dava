@@ -5,7 +5,6 @@
 - figure out how to include java docs in deploy
 - build jar and deploy to github packages
 - try top level query cache instead
-- combine Insert and delete operations into batch class
 
 
 # Todo
@@ -40,6 +39,7 @@
 - cache won't work currently with concurrency
 - handle partial lines in rollbacks
 - ensure rollback of partial writes work
+- combine Insert and delete operations into batch class
 
 
 

@@ -363,48 +363,8 @@ public class Batch {
     //TODO maybe split up this giant rollback method
     public void rollback(Table<?> table, String partition) {
 
-        // whitespace empty rows, and write empties in empties file
-        Set<Route> emptyRoutes = new HashSet<>();
-        List<WritePackage> whitespacePackagesFromEmtpies = usedTableEmtpies.getRollbackEmpties().stream()
-            .map( empty -> {
-                emptyRoutes.add(empty.getRoute());
 
-                return new WritePackage(
-                    empty.getRoute().getOffsetInTable(),
-                    Table.getWhitespaceBytes(empty.getRoute().getLengthInTable())
-                );
-            })
-            .toList();
-
-        try {
-            fileUtil.writeBytesIfPossible(
-                table.getTablePath(partition),
-                whitespacePackagesFromEmtpies
-            );
-
-            if (!whitespacePackagesFromEmtpies.isEmpty()) {
-                List<Route> empties = BaseOperationService.getAllEmpties(table.emptiesFilePath(partition));
-                if (empties != null)
-                    emptyRoutes.addAll( empties );
-
-                fileUtil.writeBytes(
-                    table.emptiesFilePath(partition),
-                    8L,
-                    ArrayUtil.appendArrays(
-                        emptyRoutes.stream()
-                            .map(route -> (Object) route.getRouteAsBytes())
-                            .toList(),
-                        10
-                    )
-                );
-            }
-
-        } catch (IOException e) {
-            throw new DavaException(ROLLBACK_ERROR, "Error undoing insert", e);
-        }
-
-
-        // delete indices referring to rows
+        // INSERT delete indices referring to rows
         indexPathToIndicesWritten.forEach((indexPath, writePackages) -> {
             try {
                 List<Route> routes = new ArrayList<>(
@@ -433,7 +393,7 @@ public class Batch {
             }
         });
 
-        // delete actual inserted rows from table
+        // INSERT delete actual inserted rows from table
         try {
             if (table.getMode() != Mode.LIGHT) {
                 fileUtil.writeBytesIfPossible(
@@ -492,12 +452,51 @@ public class Batch {
         }
 
 
+        // DELETE whitespace empty rows, and write empties in empties file
+        Set<Route> emptyRoutes = new HashSet<>();
+        List<WritePackage> whitespacePackagesFromEmtpies = usedTableEmtpies.getRollbackEmpties().stream()
+            .map( empty -> {
+                emptyRoutes.add(empty.getRoute());
+
+                return new WritePackage(
+                    empty.getRoute().getOffsetInTable(),
+                    Table.getWhitespaceBytes(empty.getRoute().getLengthInTable())
+                );
+            })
+            .toList();
+
+        try {
+            fileUtil.writeBytesIfPossible(
+                table.getTablePath(partition),
+                whitespacePackagesFromEmtpies
+            );
+
+            if (!whitespacePackagesFromEmtpies.isEmpty()) {
+                List<Route> empties = BaseOperationService.getAllEmpties(table.emptiesFilePath(partition));
+                if (empties != null)
+                    emptyRoutes.addAll( empties );
+
+                fileUtil.writeBytes(
+                    table.emptiesFilePath(partition),
+                    8L,
+                    ArrayUtil.appendArrays(
+                        emptyRoutes.stream()
+                            .map(route -> (Object) route.getRouteAsBytes())
+                            .toList(),
+                        10
+                    )
+                );
+            }
+
+        } catch (IOException e) {
+            throw new DavaException(ROLLBACK_ERROR, "Error undoing insert", e);
+        }
 
         // NOTE repartitions aren't undone. indices are just removed, and then they're left as is. index files aren't deleted
         // so count files don't need to be updated
 
 
-        // add back rows that were deleted
+        // DELETE add back rows that were deleted
         try {
             
             if (table.getMode() != Mode.LIGHT) {
@@ -559,7 +558,7 @@ public class Batch {
         }
 
 
-        // reset table size and empties file size
+        // BOTH reset table size and empties file size
         if (oldTableSize != null) {
             table.setSize(partition, oldTableSize);
         }
@@ -571,7 +570,7 @@ public class Batch {
             }
         }
 
-        // add back index routes pointing to deleted rows
+        // DELETE add back index routes pointing to deleted rows
         indexPathToInvalidRoutes.forEach( (indexPath, indexDelete) -> {
             try {
                 Set<Route> routes = new HashSet<>(
@@ -581,13 +580,20 @@ public class Batch {
                     indexDelete.getOriginalRoutes()
                 );
 
-                fileUtil.replaceFile(
+                List<IndexWritePackage> indexWrites = routes.stream()
+                    .map(route -> {
+                        return new IndexWritePackage(
+                            route,
+                            null,
+                            null,
+                            indexPath
+                        );
+                    })
+                    .toList();
+
+                fileUtil.writeBytes(
                     indexPath,
-                    routes.stream().map(route -> new WritePackage(
-                        route.getOffsetInTable(),
-                        route.getRouteAsBytes()
-                    ))
-                    .toList()
+                    (List<WritePackage>) (List<?>) indexWrites
                 );
             } catch (IOException e) {
                 throw new DavaException(ROLLBACK_ERROR, "Error rolling back index file after failed delete: " + indexPath, e);

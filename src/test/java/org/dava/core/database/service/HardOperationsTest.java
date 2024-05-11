@@ -11,6 +11,7 @@ import org.dava.core.database.objects.exception.ExceptionType;
 import org.dava.core.database.service.fileaccess.FileUtil;
 import org.dava.core.database.service.operations.Delete;
 import org.dava.core.database.service.operations.Insert;
+import org.dava.core.database.service.operations.Update;
 import org.dava.core.database.service.operations.common.Batch;
 import org.dava.core.database.service.operations.common.WritePackage;
 import org.dava.core.database.service.structure.*;
@@ -1005,6 +1006,57 @@ class HardOperationsTest {
                     .anyMatch(afterRow -> afterRow.equals(beforeRow))
             )
         );
+    }
+
+
+
+    @ParameterizedTest
+    @ValueSource(strings = {"INDEX_ALL", "MANUAL", "LIGHT"})
+    // @ValueSource(strings = {"INDEX_ALL"})
+    void rollback_update(Mode tableMode) throws IOException {
+
+        setUp(tableMode);
+
+
+        Table<?> table = database.getTableByName("Order");
+        String partition = table.getRandomPartition();
+        long intialSize = table.getSize(partition);
+
+        Equals equals = new Equals("total", "25");
+        List<Row> rows = equals.retrieve(table, new ArrayList<>(), null, null);
+        List<Row> newRows = rows.stream()
+            .map(row -> {
+                Row newRow = row.copy();
+                newRow.getColumnsToValues().put("total", BigDecimal.valueOf(150));
+                return newRow;
+            })
+            .toList();
+
+        Update update = new Update(database, table);
+        Timer timer = Timer.start();
+        update.addToBatch(rows, newRows, true, new Batch()).execute(table, true);
+        timer.printRestart();
+
+        List<Row> afterRows = equals.retrieve(table, new ArrayList<>(), null, null);
+        assertEquals(0, afterRows.size());
+
+        Equals equals2 = new Equals("total", "150");
+        List<Row> afterRows2 = equals2.retrieve(table, new ArrayList<>(), null, null);
+        assertEquals(rows.size(), afterRows2.size());
+
+        // rollback
+        timer = Timer.start();
+        Rollback rollback = new Rollback();
+        rollback.rollback(table, partition, table.getRollbackPath(partition));
+        timer.printRestart();
+
+        // assert table is the same size after rollback
+        long size = table.getSize(partition);
+        assertEquals(intialSize, size);
+
+        // assert the updates to rows were reverted
+        List<Row> allRowAfter = equals.retrieve(table, new ArrayList<>(), null, null);
+        assertEquals(rows.size(), allRowAfter.size());
     }
 
 }
