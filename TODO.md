@@ -1,14 +1,13 @@
 # Todo MVP
-- Handle updates
 - handle transactions in the repository class (look for annotation)
-- Implement Rollback operations
 - figure out how to include java docs in deploy
 - build jar and deploy to github packages
 - try top level query cache instead
+- Add constraint checking in marshalling service or somewhere else
+- Multiple table constraints, cascade etc...
 
 
 # Todo
-- Add constraint checking in marshalling service or somewhere else
 - Change how indices are made
   - text values should have annotation to cause different indexing
     - could do text values with a embedding style thing
@@ -20,15 +19,14 @@
 - Make master sql for table
 - Flyway type startup option
 - Handle edge cases near max table size
-- Multiple table constraints, cascade etc...
 - Have create and modified date for each row?
 - Consider cleaning up table or logging something if empties file is huge
 - Spatial Queries for geo locations?
 - graph based database?
 - handle partitioning when table is too large
+- allow table names to have schema levels (products.product instead of just product)
 - make a message queue set up
 - make a cache (redis like) set up
-- allow table names to have schema levels (products.product instead of just product)
 
 # Done
 - consider sorting dates like numeric values using timestamps
@@ -40,6 +38,8 @@
 - handle partial lines in rollbacks
 - ensure rollback of partial writes work
 - combine Insert and delete operations into batch class
+- Handle updates
+- Implement Rollback operations
 
 
 
